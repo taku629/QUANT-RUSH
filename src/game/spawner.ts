@@ -105,6 +105,7 @@ export class Spawner {
   next(ctx: SpawnContext): { obstacles: Placement[]; pickups: PickupPlacement[]; gap: number } {
     const r = this.rng;
     const z = this.nextZ;
+    if (this.forks.length > 8) this.forks = this.forks.filter((f) => f.to > ctx.playerZ - 50);
     const phase = phaseAt(ctx.progress);
     const fast = ctx.regime === 'VOLATILE' || ctx.regime === 'CRASH';
     const hard = Math.min(1, ctx.district * 0.12 + ctx.lap * 0.25 + (ctx.regime === 'CRASH' ? 0.25 : ctx.regime === 'VOLATILE' ? 0.12 : 0));

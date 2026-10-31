@@ -354,6 +354,11 @@ export const useGame = create<Store>((set, get) => ({
   popup(p) {
     const id = ++popupId;
     const item: Popup = { x: 50, y: 42, ...p, id };
+    // stack small trade popups instead of drawing them on top of each other
+    if (item.y >= 60) {
+      const low = get().popups.filter((q) => q.y >= 60);
+      item.y = 74 - (low.length % 4) * 6;
+    }
     set({ popups: [...get().popups.slice(-6), item] });
     window.setTimeout(() => set({ popups: get().popups.filter((q) => q.id !== id) }), 1100);
   },

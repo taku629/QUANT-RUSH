@@ -41,7 +41,7 @@ export function QuantLab() {
       const hist = seedHistory(seed);
       if (hist.length) {
         const best = hist.reduce((a, b) => (b.score > a.score ? b : a));
-        out.push({ name: 'YOU (best on this seed)', pnl: best.pnl, rar: best.rar, extra: `score ${best.score.toLocaleString()} · ${hist.length} attempts`, me: true });
+        out.push({ name: 'YOU（実プレイ・走行込み）', pnl: best.pnl, rar: best.rar, extra: `自己ベスト score ${best.score.toLocaleString()} · ${hist.length}回挑戦 · プレイ時間はボットと異なる`, me: true });
       }
       out.sort((a, b) => b.pnl - a.pnl);
       setRows(out);

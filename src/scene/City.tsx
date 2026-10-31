@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { DISTRICTS, REGIME_STYLE } from '../game/content';
 import { createTicker, signTexture, windowsTexture } from './textures';
 import { env } from './env';
-import { active } from './active';
+import { active, sessionChanged } from './active';
 import type { GameSession } from '../game/session';
 import { useGame } from '../game/store';
 
@@ -42,6 +42,7 @@ export function City({ density }: { density: number }) {
   useFrame(() => {
     const s = active();
     if (!s || !bodies.current || !roofs.current || !spires.current) return;
+    if (sessionChanged('city', s)) slots.forEach((sl, i) => { sl.wz = s.z + Math.floor(i / 2) * SPACING - 20; sl.d = -1; });
     let recolorAll = lastRegime.current !== s.engine.regime;
     lastRegime.current = s.engine.regime;
     const crash = s.engine.regime === 'CRASH';
@@ -133,6 +134,7 @@ function Signs() {
   useFrame(() => {
     const s = active();
     if (!s) return;
+    if (sessionChanged('signs', s)) state.forEach((st, i) => { st.wz = s.z + 60 + i * SIGN_GAP; st.key = ''; });
     state.forEach((st, i) => {
       if (st.wz < s.z - 20) st.wz += SIGNS * SIGN_GAP;
       const d = DISTRICTS[districtAtZ(s, st.wz) % DISTRICTS.length];
@@ -178,6 +180,7 @@ function Candles({ count }: { count: number }) {
   useFrame(() => {
     const s = active();
     if (!s || !ref.current) return;
+    if (sessionChanged('candles', s)) items.forEach((it, i) => (it.wz = s.z + i * 11));
     items.forEach((it, i) => {
       if (it.wz < s.z - 20) {
         it.wz += count * 11;
@@ -215,6 +218,7 @@ function Tickers() {
   useFrame(() => {
     const s = active();
     if (!s) return;
+    if (sessionChanged('tickers', s)) { pos[0] = s.z + 140; pos[1] = s.z + 370; }
     pos.forEach((wz, i) => {
       if (wz < s.z - 10) pos[i] = wz + 460;
       const g = groups.current[i];

@@ -12,6 +12,9 @@ async function startRun(page: Page, isMobile: boolean) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('quantrush.settings.v1')) localStorage.setItem('quantrush.settings.v1', JSON.stringify({ tutorialDone: true }));
+  });
   await page.goto('/');
   await expect(page.getByTestId('play')).toBeVisible();
   expect(await hook(page)).toBe(true);
@@ -32,8 +35,13 @@ test('full arcade loop: play → results → learning → retry resets state', a
     await page.keyboard.press('KeyD');
     await page.keyboard.press('ArrowRight');
     await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.targetLane)).toBe(2);
-    await page.keyboard.press('KeyW');
-    await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.jumps)).toBeGreaterThan(0);
+    // jumping is disabled while knocked down, so retry until the rider is upright
+    await expect
+      .poll(async () => {
+        await page.keyboard.press('KeyW');
+        return page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.jumps);
+      }, { timeout: 15_000, intervals: [400] })
+      .toBeGreaterThan(0);
   }
 
   // simulate 40 s of play with the autopilot and check finance integrity
@@ -78,6 +86,7 @@ test('full arcade loop: play → results → learning → retry resets state', a
   await page.getByTestId('learning').click();
   await expect(page.getByTestId('learning-report')).toBeVisible();
   await expect(page.locator('.insight').first()).toBeVisible();
+  await expect(page.getByTestId('moments')).toBeVisible();
   await page.getByText('BACK').click();
   await page.getByTestId('retry').click();
 
@@ -96,4 +105,34 @@ test('settings persist in localStorage', async ({ page }) => {
   await page.reload();
   const cam = await page.evaluate(() => JSON.parse(localStorage.getItem('quantrush.settings.v1') || '{}').camera);
   expect(cam).toBe('dramatic');
+});
+
+test('first play shows the tutorial with a frozen clock; skip resumes the clock', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().start());
+  await expect(page.getByTestId('tutorial')).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: 15_000 }).toBe('playing');
+  const t1 = await page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.timeLeft);
+  await page.waitForTimeout(800);
+  expect(await page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.timeLeft)).toBe(t1);
+  await page.getByTestId('skip-tutorial').click();
+  await expect(page.getByTestId('tutorial')).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.timeLeft)).toBeLessThan(t1);
+  const done = await page.evaluate(() => JSON.parse(localStorage.getItem('quantrush.settings.v1') || '{}').tutorialDone);
+  expect(done).toBe(true);
+});
+
+test('daily challenge uses the JST date seed and quant lab labels finance-only comparisons', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('quantrush.settings.v1', JSON.stringify({ tutorialDone: true })));
+  await page.goto('/');
+  await page.getByTestId('lab').click();
+  await expect(page.getByTestId('quant-lab')).toBeVisible();
+  await expect(page.getByText('金融戦略のみの比較', { exact: false })).toBeVisible();
+  await expect(page.locator('.lab-bench .bench-row').first()).toBeVisible({ timeout: 20_000 });
+  await page.getByText('TITLE').click();
+  await page.getByTestId('daily').click();
+  const seed = await page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.seed);
+  const mode = await page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().mode);
+  expect(mode).toBe('daily');
+  expect(seed).toBeGreaterThanOrEqual(100000);
 });

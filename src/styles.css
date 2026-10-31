@@ -360,17 +360,20 @@ button { font-family: var(--display); cursor: pointer; color: inherit; touch-act
 
 /* phone portrait: keep the road ahead and the near lane clear */
 @media (max-width: 760px) {
-  .tape { top: auto; bottom: max(196px, calc(env(safe-area-inset-bottom) + 186px)); right: auto; left: max(10px, env(safe-area-inset-left)); width: 46vw; padding: 5px 7px; font-size: 10px; }
+  .tape { top: max(118px, calc(env(safe-area-inset-top) + 108px)); bottom: auto; right: auto; left: max(10px, env(safe-area-inset-left)); width: 50vw; padding: 4px 7px; font-size: 10px; background: rgba(5,3,20,0.45); }
+  .tape-row { margin-bottom: 2px; }
+  .tape-read b { font-size: 11px; }
   .tape-row b { font-size: 11px; min-width: 56px; }
   .tape-read small { display: none; }
   .tape-news { display: none; }
-  .hud-inv { bottom: max(108px, calc(env(safe-area-inset-bottom) + 98px)); width: 46vw; }
+  .hud-inv { bottom: max(14px, env(safe-area-inset-bottom)); width: 40vw; background: rgba(5,3,20,0.4); }
+  .hud-inv .lbl small { display: none; }
   .hud-lanes { display: none; }
   .offline { bottom: 50%; }
   .tip { top: 21%; left: 50%; transform: translateX(-50%); width: 86vw; animation-name: tipInM; }
   @keyframes tipInM { 0% { opacity: 0; } 6% { opacity: 1; } 88% { opacity: 1; } 100% { opacity: 0; } }
   .tutorial { top: 19%; }
-  .combo { top: 26%; }
+  .combo { top: 32%; }
   .combo b { font-size: 34px; }
   .popup.xl b { font-size: 24px; }
   .popup.lg b { font-size: 20px; }
