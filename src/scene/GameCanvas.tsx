@@ -1,7 +1,7 @@
 import { Canvas, useFrame } from '@react-three/fiber';
 import { PerformanceMonitor } from '@react-three/drei';
 import { Bloom, ChromaticAberration, EffectComposer, Vignette } from '@react-three/postprocessing';
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { fx } from '../game/fx';
 import { useGame } from '../game/store';
@@ -21,6 +21,7 @@ import { TIERS, useTier, type Tier } from './quality';
 import { Road } from './Road';
 import { Sky } from './Sky';
 import { Ghost } from './Ghost';
+import { Districts } from './Districts';
 
 function Lights() {
   const key = useRef<THREE.DirectionalLight>(null);
@@ -99,12 +100,17 @@ export function GameCanvas({ onContextLost }: { onContextLost: () => void }) {
   const tier: Tier = quality === 'auto' ? autoTier : quality;
   const spec = TIERS[tier];
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // antialias can only be chosen when the WebGL context is created: fix it at mount (no remounts)
+  const [antialias] = useState(() => spec.antialias);
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
     const lost = (e: Event) => {
       e.preventDefault();
-      onContextLost();
+      // ignore the intentional context release when the canvas is being unmounted
+      window.setTimeout(() => {
+        if (c.isConnected) onContextLost();
+      }, 0);
     };
     c.addEventListener('webglcontextlost', lost);
     return () => c.removeEventListener('webglcontextlost', lost);
@@ -112,9 +118,8 @@ export function GameCanvas({ onContextLost }: { onContextLost: () => void }) {
   return (
     <Canvas
       ref={canvasRef}
-      key={spec.antialias ? 'aa' : 'noaa'}
       dpr={Math.min(spec.dpr, window.devicePixelRatio || 1)}
-      gl={{ antialias: spec.antialias, powerPreference: 'high-performance', stencil: false }}
+      gl={{ antialias, powerPreference: 'high-performance', stencil: false }}
       camera={{ fov: 66, near: 0.1, far: 1200, position: [0, 4, 9] }}
       onCreated={({ gl, scene }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -138,6 +143,7 @@ export function GameCanvas({ onContextLost }: { onContextLost: () => void }) {
         <Sky />
         <Road />
         <City density={spec.city} />
+        <Districts />
         <Gates />
         <Obstacles />
         <Pickups />

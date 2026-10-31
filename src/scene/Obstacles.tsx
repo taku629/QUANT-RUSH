@@ -16,15 +16,15 @@ const G = {
   carStripe: new THREE.BoxGeometry(2.04, 0.08, 4.24),
   carSign: new THREE.BoxGeometry(0.9, 0.22, 0.5),
   headlight: new THREE.BoxGeometry(0.5, 0.22, 0.05),
-  beam: new THREE.PlaneGeometry(2.4, 26),
+  beam: new THREE.PlaneGeometry(2.4, 26, 1, 8),
   bar: new THREE.BoxGeometry(1, 0.5, 0.4),
   barFoot: new THREE.BoxGeometry(1, 0.08, 0.5),
   spike: new THREE.OctahedronGeometry(1, 0),
   debris: new THREE.BoxGeometry(2.2, 2.0, 2.2),
   debrisWire: new THREE.BoxGeometry(2.3, 2.1, 2.3),
   ring: new THREE.RingGeometry(1.0, 1.5, 32),
-  wall: new THREE.BoxGeometry(1, 1, 1),
-  chevron: new THREE.PlaneGeometry(3.4, 30),
+  wall: new THREE.BoxGeometry(1, 1, 1, 1, 1, 16),
+  chevron: new THREE.PlaneGeometry(3.4, 30, 1, 12),
 };
 const darkCar = new THREE.MeshStandardMaterial({ color: '#1a1530', metalness: 0.8, roughness: 0.3 });
 const glass = new THREE.MeshStandardMaterial({ color: '#0c0a1a', metalness: 0.9, roughness: 0.1 });
@@ -68,7 +68,8 @@ function makeSlot(chev: THREE.Texture): { group: THREE.Group; parts: Parts } {
     beam: basic('#fff2b0', { ...additive, opacity: 0.18 }),
     warn: basic('#ff2a4d', { ...additive, opacity: 0.8 }),
     chev: basic('#ff2a4d', { ...additive, opacity: 0.6, map: chev }),
-    wall: basic('#ffffff'),
+    wall: basic('#ffffff', { transparent: true, opacity: 0.32, depthWrite: false }),
+    wallTop: basic('#ffffff'),
     spikeWire: basic('#e08dff', { wireframe: true }),
     debrisWire: basic('#ff5a6e', { wireframe: true }),
     barFoot: basic('#ff2040'),
@@ -109,6 +110,8 @@ function makeSlot(chev: THREE.Texture): { group: THREE.Group; parts: Parts } {
   const warn = mesh(G.ring, mats.warn, [0, 0.06, 0], g);
   warn.rotation.x = -Math.PI / 2;
   const wall = mesh(G.wall, mats.wall, [0, 1.2, 0], g);
+  const wallTop = mesh(G.wall, mats.wallTop, [0, 0.52, 0], wall);
+  wallTop.scale.set(1.1, 0.06, 1);
   for (const [k, o] of Object.entries({ car, oncoming, barrier, spike, debris })) {
     o.name = k;
     g.add(o);
@@ -189,7 +192,8 @@ export function Obstacles() {
           break;
         case 'wall':
           parts.wall.scale.set(o.w, o.h, o.len);
-          parts.mats.wall.color.copy(env.primary).lerp(env.secondary, 0.5 + Math.sin(env.time * 4) * 0.5).multiplyScalar(1.3);
+          parts.mats.wall.color.copy(env.primary).lerp(env.secondary, 0.5 + Math.sin(env.time * 4) * 0.5);
+          parts.mats.wallTop.color.copy(env.primary).multiplyScalar(1.8);
           break;
       }
     }

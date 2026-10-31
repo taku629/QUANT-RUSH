@@ -66,17 +66,17 @@ export function Road() {
   return (
     <group>
       <mesh rotation-x={-Math.PI / 2} position={[0, 0, -ROAD_LEN / 2 + 40]}>
-        <planeGeometry args={[13, ROAD_LEN]} />
+        <planeGeometry args={[13, ROAD_LEN, 1, 140]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
       {/* city ground grid */}
       <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, -ROAD_LEN / 2 + 40]}>
-        <planeGeometry args={[400, ROAD_LEN]} />
+        <planeGeometry args={[400, ROAD_LEN, 8, 140]} />
         <meshBasicMaterial ref={gridMat} map={gridTex} transparent opacity={0.9} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       {LANE_X.map((x, i) => (
         <mesh key={i} rotation-x={-Math.PI / 2} position={[x, 0.02, -ROAD_LEN / 2 + 40]}>
-          <planeGeometry args={[3.8, ROAD_LEN]} />
+          <planeGeometry args={[3.8, ROAD_LEN, 1, 140]} />
           <meshBasicMaterial
             ref={(m) => {
               if (m) laneMats.current[i] = m;
@@ -92,7 +92,7 @@ export function Road() {
       ))}
       {[-1, 1].map((side, i) => (
         <mesh key={side} position={[side * 6.75, 0.35, -ROAD_LEN / 2 + 40]}>
-          <boxGeometry args={[0.18, 0.12, ROAD_LEN]} />
+          <boxGeometry args={[0.18, 0.12, ROAD_LEN, 1, 1, 140]} />
           <meshBasicMaterial
             ref={(m) => {
               if (m) railMats.current[i] = m;

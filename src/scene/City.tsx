@@ -5,6 +5,8 @@ import { DISTRICTS, REGIME_STYLE } from '../game/content';
 import { createTicker, signTexture, windowsTexture } from './textures';
 import { env } from './env';
 import { active } from './active';
+import type { GameSession } from '../game/session';
+import { useGame } from '../game/store';
 
 const N = 110; // buildings per side
 const SPACING = 7;
@@ -16,39 +18,57 @@ function hash(n: number) {
 
 type Slot = { wz: number; seed: number };
 
+
+/** district index at a world z (buildings beyond the next gate already belong to the next district) */
+export function districtAtZ(s: GameSession, wz: number): number {
+  const g = s.nextGate;
+  return g && wz > g.z ? s.district + 1 : s.district;
+}
+
+type Slot2 = Slot & { d: number };
+
 export function City({ density }: { density: number }) {
   const n = Math.round(N * density);
   const bodies = useRef<THREE.InstancedMesh>(null);
   const roofs = useRef<THREE.InstancedMesh>(null);
+  const spires = useRef<THREE.InstancedMesh>(null);
   const tex = useMemo(() => windowsTexture(), []);
-  const slots = useMemo<Slot[]>(() => Array.from({ length: n * 2 }, (_, i) => ({ wz: Math.floor(i / 2) * SPACING - 20, seed: i })), [n]);
+  const slots = useMemo<Slot2[]>(() => Array.from({ length: n * 2 }, (_, i) => ({ wz: Math.floor(i / 2) * SPACING - 20, seed: i, d: -1 })), [n]);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const col = useMemo(() => new THREE.Color(), []);
-  const colorDirty = useRef(-1);
+  const lastRegime = useRef('');
   const span = n * SPACING;
 
   useFrame(() => {
     const s = active();
-    if (!s || !bodies.current || !roofs.current) return;
-    const d = DISTRICTS[s.district % DISTRICTS.length];
-    const palette = [d.primary, d.secondary, d.accent];
-    let recolor = colorDirty.current !== s.district;
-    colorDirty.current = s.district;
+    if (!s || !bodies.current || !roofs.current || !spires.current) return;
+    let recolorAll = lastRegime.current !== s.engine.regime;
+    lastRegime.current = s.engine.regime;
+    const crash = s.engine.regime === 'CRASH';
     slots.forEach((sl, i) => {
+      let recolor = recolorAll;
       if (sl.wz < s.z - 30) {
         sl.wz += span;
         sl.seed += n * 2;
         recolor = true;
       }
+      const dIdx = districtAtZ(s, sl.wz);
+      if (dIdx !== sl.d) {
+        sl.d = dIdx;
+        recolor = true;
+      }
+      const d = DISTRICTS[dIdx % DISTRICTS.length];
+      const b = d.build;
       const side = i % 2 === 0 ? -1 : 1;
       const h1 = hash(sl.seed);
       const h2 = hash(sl.seed + 0.5);
       const h3 = hash(sl.seed + 0.9);
       const far = h3 > 0.7;
-      const w = 5 + h1 * 7;
-      const height = (far ? 30 : 10) + h2 * h2 * (far ? 90 : 55);
-      const x = side * (12 + w / 2 + (far ? 14 + h3 * 30 : h3 * 6));
-      dummy.position.set(x, height / 2, -(sl.wz - s.z));
+      const w = b.wMin + h1 * (b.wMax - b.wMin);
+      const height = (b.hMin + h2 * h2 * (b.hMax - b.hMin)) * (far ? 1.5 : 1);
+      const x = side * (11 + b.near + w / 2 + (far ? 14 + h3 * 30 : h3 * 6));
+      const z = -(sl.wz - s.z);
+      dummy.position.set(x, height / 2, z);
       dummy.scale.set(w, height, 5 + h2 * 5);
       dummy.updateMatrix();
       bodies.current!.setMatrixAt(i, dummy.matrix);
@@ -56,22 +76,30 @@ export function City({ density }: { density: number }) {
       dummy.scale.set(w + 0.3, 0.3, 5.3 + h2 * 5);
       dummy.updateMatrix();
       roofs.current!.setMatrixAt(i, dummy.matrix);
+      const spire = hash(sl.seed + 2.3) < b.spire;
+      dummy.position.y = height + (spire ? 6 + h1 * 10 : 0);
+      dummy.scale.set(spire ? w * 0.35 : 0, spire ? 12 + h1 * 20 : 0, spire ? w * 0.35 : 0);
+      dummy.updateMatrix();
+      spires.current!.setMatrixAt(i, dummy.matrix);
       if (recolor) {
+        const palette = [d.primary, d.secondary, d.accent];
         col.set(palette[Math.floor(h1 * 3) % 3]);
-        if (s.engine.regime === 'CRASH' && h2 > 0.5) col.set('#ff2a4d');
+        if (crash && h2 > 0.5) col.set('#ff2a4d');
         bodies.current!.setColorAt(i, col.clone().multiplyScalar(0.9 + h2 * 0.6));
         roofs.current!.setColorAt(i, col.multiplyScalar(2));
+        spires.current!.setColorAt(i, col);
+        recolorAll = recolorAll || false;
+        if (bodies.current!.instanceColor) bodies.current!.instanceColor.needsUpdate = true;
+        if (roofs.current!.instanceColor) roofs.current!.instanceColor.needsUpdate = true;
+        if (spires.current!.instanceColor) spires.current!.instanceColor.needsUpdate = true;
       }
     });
     bodies.current.instanceMatrix.needsUpdate = true;
     roofs.current.instanceMatrix.needsUpdate = true;
-    if (recolor) {
-      if (bodies.current.instanceColor) bodies.current.instanceColor.needsUpdate = true;
-      if (roofs.current.instanceColor) roofs.current.instanceColor.needsUpdate = true;
-    }
-    // crash: flickering city lights
+    spires.current.instanceMatrix.needsUpdate = true;
     const m = bodies.current.material as THREE.MeshBasicMaterial;
-    const flicker = env.danger > 0.8 && Math.sin(env.time * 37) > 0.7 ? 0.45 : 1;
+    const reduce = useGame.getState().settings.reduceMotion;
+    const flicker = !reduce && env.danger > 0.8 && Math.sin(env.time * 37) > 0.7 ? 0.6 : 1;
     m.color.setScalar(flicker);
   });
 
@@ -83,6 +111,10 @@ export function City({ density }: { density: number }) {
       </instancedMesh>
       <instancedMesh key={`r${n}`} ref={roofs} args={[undefined, undefined, n * 2]} frustumCulled={false}>
         <boxGeometry args={[1, 1, 1]} />
+        <meshBasicMaterial toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh key={`s${n}`} ref={spires} args={[undefined, undefined, n * 2]} frustumCulled={false}>
+        <coneGeometry args={[0.5, 1, 4]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
       <Signs />
@@ -101,9 +133,9 @@ function Signs() {
   useFrame(() => {
     const s = active();
     if (!s) return;
-    const d = DISTRICTS[s.district % DISTRICTS.length];
     state.forEach((st, i) => {
       if (st.wz < s.z - 20) st.wz += SIGNS * SIGN_GAP;
+      const d = DISTRICTS[districtAtZ(s, st.wz) % DISTRICTS.length];
       const mesh = refs.current[i];
       if (!mesh) return;
       const seed = Math.floor(st.wz / SIGN_GAP);
