@@ -43,8 +43,8 @@ export type LaneParams = {
 
 export const LANES: readonly LaneParams[] = [
   { id: 0, name: 'AGGRESSIVE', halfSpread: 0.02, queueWin: 0.95 },
-  { id: 1, name: 'BALANCED', halfSpread: 0.05, queueWin: 0.85 },
-  { id: 2, name: 'DEFENSIVE', halfSpread: 0.1, queueWin: 0.75 },
+  { id: 1, name: 'BALANCED', halfSpread: 0.05, queueWin: 0.82 },
+  { id: 2, name: 'DEFENSIVE', halfSpread: 0.1, queueWin: 0.62 },
 ];
 
 export type SimConfig = {
@@ -71,6 +71,8 @@ export type SimConfig = {
   rebatePerShare: number;
   /** seconds without a fill before the combo times out */
   comboTimeout: number;
+  /** model version (v1 = regime-only flow, v2 = episodes + blocks + impact) */
+  model: 1 | 2;
 };
 
 export const DEFAULT_CONFIG: SimConfig = {
@@ -87,9 +89,49 @@ export const DEFAULT_CONFIG: SimConfig = {
   stopLoss: -3000,
   rebatePerShare: 0.01,
   comboTimeout: 3.5,
+  model: 2,
 };
 
 export const LOT_SIZES = [100, 100, 200, 200, 300] as const;
+
+/**
+ * Micro "flow episodes" (hidden state, 2–6 s) layered on top of the macro regime.
+ * They are what makes the best quote situation-dependent: the regime label is a clue, not the answer.
+ *  - TWO_SIDED: balanced noise flow. Quote near the takers' typical urgency.
+ *  - RUSH:      many small, low-urgency, two-sided retail orders. Tight quotes win on volume.
+ *  - TOXIC:     an informed burst. One-sided flow + price drifting the same way. Widen / hedge.
+ *  - SWEEP:     a PUBLICLY announced one-sided liquidity need (index rebalance, margin liquidation).
+ *               It pushes the price temporarily; the push decays. Providing liquidity is rewarded.
+ */
+export type EpisodeKind = 'TWO_SIDED' | 'RUSH' | 'TOXIC' | 'SWEEP';
+
+export const EPISODE_MIX: Record<RegimeId, Record<EpisodeKind, number>> = {
+  CALM: { TWO_SIDED: 0.58, RUSH: 0.18, TOXIC: 0.14, SWEEP: 0.1 },
+  TRENDING: { TWO_SIDED: 0.45, RUSH: 0.15, TOXIC: 0.25, SWEEP: 0.15 },
+  VOLATILE: { TWO_SIDED: 0.38, RUSH: 0.25, TOXIC: 0.2, SWEEP: 0.17 },
+  CRASH: { TWO_SIDED: 0.3, RUSH: 0.0, TOXIC: 0.4, SWEEP: 0.3 },
+};
+
+export const EPISODE_PARAMS = {
+  /** order-rate multiplier */
+  rate: { TWO_SIDED: 1, RUSH: 3.0, TOXIC: 1.15, SWEEP: 1.5 } as Record<EpisodeKind, number>,
+  /** urgency (willingness) multiplier for noise takers */
+  urgency: { TWO_SIDED: 1, RUSH: 0.45, TOXIC: 1, SWEEP: 1.6 } as Record<EpisodeKind, number>,
+  /** informed share inside a TOXIC burst */
+  toxicInformed: 0.45,
+  /** price drift ($/s) impounded during a TOXIC burst, by regime */
+  toxicDrift: { CALM: 0.03, TRENDING: 0.04, VOLATILE: 0.07, CRASH: 0.09 } as Record<RegimeId, number>,
+  /** noise traders herd behind an informed burst (probability of trading on the burst's side) */
+  toxicHerd: 0.65,
+  /** share of SWEEP orders on the announced side */
+  sweepOneSided: 0.85,
+  /** temporary price impact per share of sweep flow ($/share) and its half-life (s) */
+  sweepImpact: 0.00011,
+  impactHalfLife: 1.6,
+};
+
+/** Large institutional "block" orders that physically appear in one lane. You must ride in that lane to trade them. */
+export const BLOCK = { ratePerSec: 0.11, lead: 3.0, minQty: 500, maxQty: 800 };
 
 /** Urgency tiers drawn as rings on order orbs: tier n fills lanes 0..n-1 (if queue priority wins). */
 export function urgencyTier(willingness: number): 0 | 1 | 2 | 3 {

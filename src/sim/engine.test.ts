@@ -21,7 +21,7 @@ function flatTape(orders: Partial<TakerOrder>[], mids?: number[]): MarketTape {
     arrivals.set(t.arriveTick, l);
     return t;
   });
-  return { ...base, mid, orders: full, arrivals, regime: base.regime.map(() => 'CALM'), segments: [{ regime: 'CALM', startTick: 0, endTick: base.totalTicks, direction: 1 }], headlines: [] };
+  return { ...base, mid, orders: full, arrivals, regime: base.regime.map(() => 'CALM'), segments: [{ regime: 'CALM', startTick: 0, endTick: base.totalTicks, direction: 1 }], headlines: [], news: [] };
 }
 
 const idle = (lane: LaneId = 1): Action => ({ lane, hedge: false });
@@ -266,7 +266,7 @@ describe('scoring & review', () => {
   it('review is built from the log with benchmarks on the same seed', () => {
     const e = runEpisode(2024, new FixedSpreadStrategy(0), 90).engine;
     const rv = buildReview(e, { collisions: 1, offlineSeconds: 1.5, alphaDrives: 0, gatesPassed: 2, gatesFailed: 1 });
-    expect(rv.benchmarks).toHaveLength(4);
+    expect(rv.benchmarks).toHaveLength(5);
     expect(rv.insights.length).toBeGreaterThan(0);
     expect(rv.attribution.total).toBeCloseTo(e.pnl, 9);
     const sumRegimeSeconds = rv.regimes.reduce((a, r) => a + r.seconds, 0);

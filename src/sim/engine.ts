@@ -13,7 +13,8 @@
  *   PnL ≡ spreadPnL + rebatePnL − hedgeCost + inventoryPnL
  */
 import { DEFAULT_CONFIG, LANES, REGIME_PARAMS, urgencyTier, type LaneId, type RegimeId, type SimConfig } from './config';
-import { generateTape, type Headline, type MarketTape, type Side, type TakerOrder } from './tape';
+import { generateTape, type Headline, type MarketTape, type NewsItem, type Side, type TakerOrder } from './tape';
+import { computeSignals, type MarketSignals } from './signals';
 
 export type Action = {
   /** which quote width we show (0 = AGGRESSIVE … 2 = DEFENSIVE) */
@@ -26,7 +27,7 @@ export type Action = {
   rebate?: boolean;
 };
 
-export type MissReason = 'PRICE' | 'QUEUE' | 'LIMIT' | 'OFFLINE';
+export type MissReason = 'PRICE' | 'QUEUE' | 'LIMIT' | 'OFFLINE' | 'ROUTE';
 
 export type Fill = {
   orderId: number;
@@ -70,6 +71,8 @@ export type StepEvents = {
   /** fills whose markout became known this tick */
   markouts: Fill[];
   headline: Headline | null;
+  /** public news published this tick */
+  news: NewsItem[];
   comboBroken: 'TOXIC' | 'TIMEOUT' | null;
   limitHit: boolean;
   stoppedOut: boolean;
@@ -84,6 +87,8 @@ export type VisibleOrder = {
   ticksToArrival: number;
   spawnTick: number;
   arriveTick: number;
+  /** block orders: the lane they physically sit in */
+  block?: LaneId;
 };
 
 /** Everything a player (or agent) is allowed to know at the current tick. No future data. */
@@ -106,6 +111,8 @@ export type Observation = {
   /** 1-tick-horizon parametric VaR of current inventory (95%, 1s, $) */
   var95: number;
   incoming: VisibleOrder[];
+  /** public tape / flow signals */
+  signals: MarketSignals;
 };
 
 export type TimelinePoint = { tick: number; mid: number; pnl: number; inventory: number; lane: LaneId; regime: RegimeId };
@@ -158,6 +165,7 @@ export class MarketMakerEngine {
   actions: Action[] = [];
 
   private pendingMarkouts: Fill[] = [];
+  private newsCursor = 0;
 
   constructor(seedOrTape: number | MarketTape, config: SimConfig = DEFAULT_CONFIG) {
     this.tape = typeof seedOrTape === 'number' ? generateTape(seedOrTape, config) : seedOrTape;
@@ -202,6 +210,7 @@ export class MarketMakerEngine {
       hedgeRejected: null,
       markouts: [],
       headline: null,
+      news: [],
       comboBroken: null,
       limitHit: false,
       stoppedOut: false,
@@ -218,6 +227,7 @@ export class MarketMakerEngine {
     if (t === 0 || this.tape.regime[t - 1] !== regime) {
       ev.headline = this.tape.headlines.find((h) => h.tick === t) ?? null;
     }
+    while (this.newsCursor < this.tape.news.length && this.tape.news[this.newsCursor].tick <= t) ev.news.push(this.tape.news[this.newsCursor++]);
 
     // 1) hedge: flatten inventory at mid ± cost (crossing the market's spread + fees)
     if (action.hedge) {
@@ -246,6 +256,7 @@ export class MarketMakerEngine {
         let reason: MissReason | null = null;
         let qty = 0;
         if (!quoting) reason = 'OFFLINE';
+        else if (o.block !== undefined && o.block !== action.lane) reason = 'ROUTE';
         else if (o.willingness < lp.halfSpread) reason = 'PRICE';
         else if (o.queueDraw >= lp.queueWin) reason = 'QUEUE';
         else {
@@ -364,14 +375,20 @@ export class MarketMakerEngine {
     return Math.sqrt(varTick / this.cfg.dt); // per sqrt(second)
   }
 
+  signals(): MarketSignals {
+    return computeSignals(this.tape, this.tick);
+  }
+
   visibleOrders(): VisibleOrder[] {
     const out: VisibleOrder[] = [];
-    for (let a = this.tick; a <= this.tick + this.leadTicks; a++) {
+    for (let a = this.tick; a <= this.tick + this.tape.maxLeadTicks; a++) {
       const list = this.tape.arrivals.get(a);
       if (!list) continue;
       for (const o of list) {
         if (o.spawnTick > this.tick) continue;
-        out.push({ id: o.id, side: o.side, qty: o.qty, tier: urgencyTier(o.willingness), ticksToArrival: a - this.tick, spawnTick: o.spawnTick, arriveTick: o.arriveTick });
+        const v: VisibleOrder = { id: o.id, side: o.side, qty: o.qty, tier: urgencyTier(o.willingness), ticksToArrival: a - this.tick, spawnTick: o.spawnTick, arriveTick: o.arriveTick };
+        if (o.block !== undefined) v.block = o.block;
+        out.push(v);
       }
     }
     return out;
@@ -396,6 +413,7 @@ export class MarketMakerEngine {
       realizedVol: vol,
       var95: 1.645 * vol * Math.abs(this.inventory),
       incoming: this.visibleOrders(),
+      signals: this.signals(),
     };
   }
 }
