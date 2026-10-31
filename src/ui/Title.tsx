@@ -4,6 +4,7 @@ import { DISTRICTS, VEHICLES, type VehicleId } from '../game/content';
 import { useGame } from '../game/store';
 import type { CameraMode } from '../game/storage';
 import { HowTo } from './HowTo';
+import { dailyInfo, seedHistory } from '../game/ghost';
 
 const CAMS: { id: CameraMode; label: string; jp: string }[] = [
   { id: 'standard', label: 'STANDARD', jp: '標準' },
@@ -16,6 +17,9 @@ export function Title() {
   const records = useGame((s) => s.records);
   const setSettings = useGame((s) => s.setSettings);
   const start = useGame((s) => s.start);
+  const openLab = useGame((s) => s.openLab);
+  const daily = dailyInfo();
+  const dailyBest = seedHistory(daily.seed).reduce((m, a) => Math.max(m, a.score), 0);
   const [how, setHow] = useState(false);
   const [opts, setOpts] = useState(false);
   const [seedText, setSeedText] = useState(settings.fixedSeed ? String(settings.fixedSeed) : '');
@@ -81,6 +85,10 @@ export function Title() {
         </button>
 
         <div className="title-buttons">
+          <button className="ghost-btn accent" onClick={() => { audio.unlock(); start(undefined, 'daily'); }} data-testid="daily">
+            DAILY CHALLENGE <small>{daily.key} JST{dailyBest ? ` · BEST ${dailyBest.toLocaleString()}` : ''}</small>
+          </button>
+          <button className="ghost-btn" onClick={openLab} data-testid="lab">QUANT LAB</button>
           <button className="ghost-btn" onClick={() => setHow(true)}>HOW TO PLAY</button>
           <button className="ghost-btn" onClick={() => setOpts(!opts)}>SETTINGS</button>
           <button className="ghost-btn" onClick={() => setSettings({ sfx: !settings.sfx, music: !settings.sfx })}>
@@ -110,8 +118,24 @@ export function Title() {
             <div className="set-row">
               <span>QUALITY 画質</span>
               <div className="seg">
-                <button className={settings.quality === 'high' ? 'on' : ''} onClick={() => setSettings({ quality: 'high' })}>HIGH</button>
-                <button className={settings.quality === 'low' ? 'on' : ''} onClick={() => setSettings({ quality: 'low' })}>LOW</button>
+                {(['auto', 'high', 'medium', 'low'] as const).map((q) => (
+                  <button key={q} className={settings.quality === q ? 'on' : ''} onClick={() => setSettings({ quality: q })}>{q.toUpperCase()}</button>
+                ))}
+              </div>
+            </div>
+            <div className="set-row">
+              <span>揺れ・点滅を抑える</span>
+              <div className="seg">
+                <button className={settings.reduceMotion ? 'on' : ''} onClick={() => setSettings({ reduceMotion: true })}>ON</button>
+                <button className={!settings.reduceMotion ? 'on' : ''} onClick={() => setSettings({ reduceMotion: false })}>OFF</button>
+              </div>
+            </div>
+            <div className="set-row">
+              <span>TIPS / FPS</span>
+              <div className="seg">
+                <button className={settings.tips ? 'on' : ''} onClick={() => setSettings({ tips: !settings.tips })}>TIPS {settings.tips ? 'ON' : 'OFF'}</button>
+                <button className={settings.showFps ? 'on' : ''} onClick={() => setSettings({ showFps: !settings.showFps })}>FPS {settings.showFps ? 'ON' : 'OFF'}</button>
+                <button onClick={() => setSettings({ tutorialDone: false })}>{settings.tutorialDone ? 'チュートリアル再表示' : 'チュートリアル: 次回表示'}</button>
               </div>
             </div>
             <div className="set-row">

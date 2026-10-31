@@ -7,6 +7,8 @@ import { glowTexture, streakTexture } from './textures';
 import { env } from './env';
 import { active } from './active';
 
+const GOLD = new THREE.Color('#ffd23d');
+
 function Rider({ color }: { color: string }) {
   return (
     <group position={[0, 0.25, 0]}>
@@ -151,12 +153,12 @@ export function Player({ vehicle, showRider }: { vehicle: VehicleId; showRider: 
       aura.current.visible = s.alpha > 0;
       aura.current.scale.setScalar(1.9 + Math.sin(t * 20) * 0.12);
     }
-    if (glow.current) (glow.current.material as THREE.MeshBasicMaterial).color.copy(s.alpha > 0 ? new THREE.Color('#ffd23d') : env.primary);
+    if (glow.current) (glow.current.material as THREE.MeshBasicMaterial).color.copy(s.alpha > 0 ? GOLD : env.primary);
     const sp = s.speed / 40;
     streaks.current.forEach((m, i) => {
       m.scale.set(1, 2 + sp * 6 * (s.alpha > 0 ? 1.8 : 1), 1);
       m.position.z = 1.2 + m.scale.y / 2;
-      (m.material as THREE.MeshBasicMaterial).color.copy(s.alpha > 0 ? new THREE.Color('#ffd23d') : i === 0 ? env.primary : env.secondary);
+      (m.material as THREE.MeshBasicMaterial).color.copy(s.alpha > 0 ? GOLD : i === 0 ? env.primary : env.secondary);
     });
   });
 

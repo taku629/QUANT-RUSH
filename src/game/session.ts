@@ -17,7 +17,11 @@ import { DISTRICTS, LANE_X, VEHICLES, type VehicleId } from './content';
 export const FIXED_DT = 1 / 60;
 const FIN_EVERY = Math.round(DEFAULT_CONFIG.dt / FIXED_DT); // 3 action ticks per market tick
 
-export type ObstacleKind = 'car' | 'barrier' | 'spike' | 'debris';
+import { Spawner, type ObstacleKind, type PickupKind, type Placement } from './spawner';
+import { makeTrack, type TrackShape } from './track';
+export type { ObstacleKind } from './spawner';
+
+export type Pickup = { id: number; kind: PickupKind; lane: LaneId; x: number; z: number; used: boolean };
 
 export type Obstacle = {
   id: number;
@@ -54,6 +58,10 @@ export type FxEvent =
   | { type: 'hit'; kind: ObstacleKind; x: number; z: number }
   | { type: 'smash'; kind: ObstacleKind; x: number; z: number; points: number }
   | { type: 'jump' }
+  | { type: 'ramp' }
+  | { type: 'boost' }
+  | { type: 'bump' }
+  | { type: 'block'; side: 'BUY' | 'SELL'; qty: number; filled: boolean }
   | { type: 'land' }
   | { type: 'lane'; lane: LaneId }
   | { type: 'gate'; passed: boolean; bonus: number; district: number; final: boolean; inventory: number }
@@ -72,11 +80,14 @@ export type EndReason = 'TIME' | 'KNOCKOUT' | 'STOPPED_OUT' | 'MARKET_CLOSE';
 export type Input = { left: number; right: number; jump: boolean; hedge: boolean; alpha: boolean };
 
 export const GAME_RULES = {
-  startTime: 28,
-  gatePassBonus: 18,
-  gateFailBonus: 8,
-  overtimePassBonus: 14,
-  overtimeFailBonus: 5,
+  startTime: 30,
+  /** time bonus for a passed gate: gatePassBonus − district × gateDecay (min gateMinBonus) */
+  gatePassBonus: 16,
+  gateDecay: 1.5,
+  gateMinBonus: 9,
+  gateFailBonus: 6,
+  overtimePassBonus: 8,
+  overtimeFailBonus: 3,
   /** inventory check at settlement gates: |inventory| ≤ this passes */
   gateInventoryLimit: 500,
   offlineTime: 1.4,
@@ -142,10 +153,21 @@ export class GameSession {
   tradingPoints = 0;
   actionPoints = 0;
   jumps = 0;
+  laneChanges = 0;
+  /** tutorial freezes the clock */
+  timerFrozen = false;
 
   obstacles: Obstacle[] = [];
-  private nextObstacleZ = 70;
   private obstacleId = 0;
+  readonly spawner: Spawner;
+  pickups: Pickup[] = [];
+  boost = 0;
+  airTime = 0;
+  boosts = 0;
+  ramps = 0;
+  vx = 0;
+  /** visual track shape (curves/hills) */
+  readonly track: (z: number, district: number) => TrackShape;
   private hedgeQueued = false;
   private lastRegime: RegimeId | null = null;
 
@@ -161,6 +183,9 @@ export class GameSession {
     this.stability = this.vehicle.stability;
     this.speed = this.vehicle.baseSpeed * 0.6;
     this.rng = createRng(hashSeed(seed, 'world'));
+    this.spawner = new Spawner(this.rng);
+    this.track = makeTrack(seed);
+    this.gauge = 50; // first ALPHA DRIVE comes within the first ~15 s of good play
     this.layoutGate(0);
   }
 
@@ -225,13 +250,21 @@ export class GameSession {
     const dt = FIXED_DT;
     this.frame++;
     this.t += dt;
-    this.timeLeft -= dt;
+    if (!this.timerFrozen) this.timeLeft -= dt;
 
     // --- input ---
     const prevLane = this.targetLane;
     if (input.left) this.targetLane = Math.max(0, this.targetLane - input.left) as LaneId;
     if (input.right) this.targetLane = Math.min(2, this.targetLane + input.right) as LaneId;
-    if (this.targetLane !== prevLane) this.emit({ type: 'lane', lane: this.targetLane });
+    // inside a fork the median wall cannot be crossed: the route (and the spread) is committed
+    if (this.targetLane !== prevLane && prevLane !== 1 && this.besideWall()) {
+      this.targetLane = prevLane;
+      this.emit({ type: 'bump' });
+    }
+    if (this.targetLane !== prevLane) {
+      this.laneChanges++;
+      this.emit({ type: 'lane', lane: this.targetLane });
+    }
     if (input.jump && this.grounded && this.stumble <= 0) {
       this.vy = this.vehicle.jumpVelocity;
       this.grounded = false;
@@ -248,19 +281,34 @@ export class GameSession {
     }
 
     // --- physics ---
+    // lateral spring-damper: each vehicle has its own steering feel
     const tx = LANE_X[this.targetLane];
-    const lat = this.vehicle.lateral * (this.stumble > 0 ? 0.4 : 1);
-    const dx = tx - this.x;
-    const step = Math.sign(dx) * Math.min(Math.abs(dx), lat * dt * (0.35 + Math.min(1, Math.abs(dx) / 2)));
-    this.x += step;
-    this.tilt += ((-dx * 0.18) - this.tilt) * Math.min(1, dt * 10);
+    const v = this.vehicle;
+    const k = v.spring * (this.stumble > 0 ? 0.35 : 1) * (this.grounded ? 1 : 0.7);
+    this.vx += (k * (tx - this.x) - v.damping * this.vx) * dt;
+    const vmax = v.lateral * 1.25;
+    this.vx = Math.max(-vmax, Math.min(vmax, this.vx));
+    this.x += this.vx * dt;
+    if (Math.abs(tx - this.x) < 0.02 && Math.abs(this.vx) < 0.2) {
+      this.x = tx;
+      this.vx = 0;
+    }
+    this.x = Math.max(-5.2, Math.min(5.2, this.x));
+    this.tilt += (-this.vx * 0.045 - this.tilt) * Math.min(1, dt * 12);
     if (!this.grounded) {
+      this.airTime += dt;
       this.vy -= 30 * dt;
       this.y += this.vy * dt;
       if (this.y <= 0) {
         this.y = 0;
         this.vy = 0;
         this.grounded = true;
+        if (this.airTime > 0.9) {
+          const pts = 100 * this.comboMultiplier;
+          this.actionPoints += pts;
+          this.addGauge(6);
+        }
+        this.airTime = 0;
         this.emit({ type: 'land' });
       }
     }
@@ -269,9 +317,10 @@ export class GameSession {
 
     const lapBoost = this.lap * 4;
     let target = this.vehicle.baseSpeed + Math.min(this.district, 4) * 2.2 + lapBoost + Math.min(this.combo, 40) * 0.22;
+    if (this.boost > 0) target += 14;
     if (this.alpha > 0) target *= GAME_RULES.alphaSpeedMul;
     if (this.stumble > 0) target *= 0.45;
-    const accel = this.speed < target ? 14 : 30;
+    const accel = this.speed < target ? (this.boost > 0 ? 40 : this.vehicle.accel) : 30;
     this.speed += Math.sign(target - this.speed) * Math.min(Math.abs(target - this.speed), accel * dt);
     this.z += this.speed * dt;
     this.maxSpeed = Math.max(this.maxSpeed, this.speed);
@@ -282,6 +331,7 @@ export class GameSession {
       this.offlineTime += dt;
     }
     if (this.invuln > 0) this.invuln -= dt;
+    if (this.boost > 0) this.boost -= dt;
     if (this.alpha > 0) {
       this.alpha -= dt;
       if (this.alpha <= 0) this.emit({ type: 'alpha', on: false });
@@ -318,7 +368,14 @@ export class GameSession {
       this.addGauge(1.5 + f.halfSpread * 20);
       this.emit({ type: 'fill', fill: f, points: Math.round(pts) });
     }
-    for (const m of ev.misses) this.emit({ type: 'miss', reason: m.reason, orderId: m.order.id });
+    for (const m of ev.misses) {
+      this.emit({ type: 'miss', reason: m.reason, orderId: m.order.id });
+      if (m.order.block !== undefined) this.emit({ type: 'block', side: m.order.side, qty: m.order.qty, filled: false });
+    }
+    for (const f of ev.fills) {
+      const o = this.engine.tape.orders[f.orderId];
+      if (o.block !== undefined) this.emit({ type: 'block', side: o.side, qty: Math.abs(f.qty), filled: true });
+    }
     for (const f of ev.markouts) {
       if (f.toxic) {
         this.emit({ type: 'toxic', fill: f });
@@ -335,70 +392,72 @@ export class GameSession {
   }
 
   // ---------------- obstacles ----------------
-  private spawnRow(z: number) {
-    const regime = this.engine.regime;
-    const r = this.rng;
-    const lanes: LaneId[] = [0, 1, 2];
-    const pick = () => lanes.splice(r.int(0, lanes.length - 1), 1)[0];
-    const roll = r.next();
-    const hard = Math.min(1, this.district * 0.12 + this.lap * 0.25);
-    const add = (kind: ObstacleKind, lane: LaneId, opts: Partial<Obstacle> = {}) => {
-      const base: Obstacle = {
-        id: this.obstacleId++, kind, lane, span: 1, x: LANE_X[lane], z, y: 0, w: 1.8, h: 1.6, len: 3.6, speed: 0,
-        targetLane: lane, changeAt: -1, alive: true, passed: false, minGap: Infinity, hit: false, color: 0xffffff,
-      };
-      if (kind === 'car') Object.assign(base, { w: 2.0, h: 1.5, len: 4.2, speed: r.range(12, 20) });
-      if (kind === 'barrier') Object.assign(base, { w: 3.4, h: 0.95, len: 0.6 });
-      if (kind === 'spike') Object.assign(base, { w: 1.3, h: 3.2, len: 1.3 });
-      if (kind === 'debris') Object.assign(base, { w: 2.4, h: 2.0, len: 2.4, y: 26 });
-      Object.assign(base, opts);
-      this.obstacles.push(base);
-      return base;
+  /** true while the player is alongside a fork's median wall */
+  besideWall(): boolean {
+    return this.obstacles.some((o) => o.alive && o.kind === 'wall' && Math.abs(o.z - this.z) < o.len / 2 + 6);
+  }
+
+  private place(p: Placement) {
+    const base: Obstacle = {
+      id: this.obstacleId++, kind: p.kind, lane: p.lane, span: p.span ?? 1, x: LANE_X[p.lane], z: p.z, y: 0, w: 1.8, h: 1.6, len: 3.6, speed: p.speed ?? 0,
+      targetLane: p.changeTo ?? p.lane, changeAt: p.changeAt ?? -1, alive: true, passed: false, minGap: Infinity, hit: false, color: 0xffffff,
     };
-    const fast = regime === 'VOLATILE' || regime === 'CRASH';
-    if (regime === 'CRASH' && roll < 0.45) {
-      add('debris', pick());
-      if (r.next() < 0.5 + hard * 0.3) add('debris', pick(), { z: z + 6 });
-    } else if (fast && roll < 0.6) {
-      add('spike', pick());
-      if (r.next() < 0.35 + hard * 0.4) add('spike', pick());
-    } else if (roll < 0.78) {
-      const c = add('car', pick());
-      if (r.next() < 0.3 + hard * 0.4) add('car', pick(), { z: z + r.range(0, 8) });
-      if (fast && r.next() < 0.5) {
-        const free = lanes[0];
-        if (free !== undefined && Math.abs(free - c.lane) === 1) {
-          c.targetLane = free;
-          c.changeAt = r.range(32, 50);
-        }
-      }
-    } else {
-      // low barrier: jump it or go around (spans 1–3 lanes, a 3-lane wall must be jumped)
-      const span = r.next() < 0.25 + hard * 0.3 ? 3 : r.next() < 0.5 ? 2 : 1;
-      if (span === 3) add('barrier', 1, { w: 11.6, span: 3, x: 0 });
-      else if (span === 2) {
-        const left = r.next() < 0.5;
-        add('barrier', left ? 0 : 1, { w: 7.6, span: 2, x: left ? -2 : 2 });
-      } else add('barrier', pick());
+    if (p.kind === 'car') Object.assign(base, { w: 2.0, h: 1.5, len: 4.2 });
+    if (p.kind === 'oncoming') Object.assign(base, { w: 2.1, h: 1.7, len: 4.6 });
+    if (p.kind === 'barrier') {
+      Object.assign(base, { w: 3.4, h: 0.95, len: 0.6 });
+      if (p.span === 3) Object.assign(base, { w: 11.6, x: 0 });
+      if (p.span === 2) Object.assign(base, { w: 7.6, x: p.lane === 0 ? -2 : 2 });
     }
+    if (p.kind === 'spike') Object.assign(base, { w: 1.3, h: 3.2, len: 1.3 });
+    if (p.kind === 'debris') Object.assign(base, { w: 2.4, h: 2.0, len: 2.4, y: 26 });
+    if (p.kind === 'wall') Object.assign(base, { w: 1.0, h: 2.4, len: p.len ?? 80, x: 0 });
+    this.obstacles.push(base);
+  }
+
+  /** target speed estimate used by the spawner for fairness checks */
+  private cruiseSpeed() {
+    return this.vehicle.baseSpeed + Math.min(this.district, 4) * 2.2 + this.lap * 4 + 10;
   }
 
   private updateObstacles(dt: number) {
-    const regime = this.engine.regime;
-    const baseGap = { CALM: 52, TRENDING: 43, VOLATILE: 36, CRASH: 31 }[regime];
-    const gap = Math.max(18, baseGap * (1 - Math.min(this.district, 4) * 0.05 - this.lap * 0.1));
-    while (this.nextObstacleZ < this.z + 230) {
-      const g = this.nextGate;
-      const nearGate = g && this.nextObstacleZ > g.z - 45 && this.nextObstacleZ < g.z + 30;
-      if (!nearGate && this.t > 1.5) this.spawnRow(this.nextObstacleZ);
-      this.nextObstacleZ += gap * this.rng.range(0.8, 1.25);
+    const sp = this.spawner;
+    while (sp.nextZ < this.z + 240) {
+      const g = this.nextGate!;
+      const gateLen = g.z - this.districtStartZ;
+      const res = sp.next({
+        playerZ: this.z, speed: this.cruiseSpeed(), regime: this.engine.regime,
+        progress: Math.max(0, Math.min(1, (sp.nextZ - this.districtStartZ) / gateLen)),
+        district: this.district, lap: this.lap, t: this.t, gateZ: g.z,
+      });
+      for (const p of res.obstacles) this.place(p);
+      for (const pk of res.pickups) this.pickups.push({ id: this.obstacleId++, kind: pk.kind, lane: pk.lane, x: LANE_X[pk.lane], z: pk.z, used: false });
+      sp.nextZ += res.gap;
     }
+    // pickups: ramps launch you, boost pads accelerate you
+    for (const pk of this.pickups) {
+      if (pk.used || Math.abs(pk.z - this.z) > 2.2 || Math.abs(pk.x - this.x) > 1.7) continue;
+      if (pk.kind === 'ramp' && this.grounded) {
+        pk.used = true;
+        this.vy = 13 + this.vehicle.rampBonus;
+        this.grounded = false;
+        this.ramps++;
+        this.emit({ type: 'ramp' });
+      } else if (pk.kind === 'boost' && this.y < 0.5) {
+        pk.used = true;
+        this.boost = 1.3;
+        this.boosts++;
+        this.addGauge(4);
+        this.emit({ type: 'boost' });
+      }
+    }
+    if (this.pickups.length > 60) this.pickups = this.pickups.filter((p) => p.z > this.z - 30);
     const P = GAME_RULES;
     for (const o of this.obstacles) {
       if (!o.alive) continue;
       o.z += o.speed * dt;
       const ahead = o.z - this.z;
-      if (o.kind === 'car' && o.changeAt > 0 && ahead < o.changeAt && o.targetLane !== o.lane) {
+      if ((o.kind === 'car' || o.kind === 'oncoming') && o.changeAt > 0 && ahead < o.changeAt && o.targetLane !== o.lane) {
         const tx = LANE_X[o.targetLane];
         o.x += Math.sign(tx - o.x) * Math.min(Math.abs(tx - o.x), 5 * dt);
         if (Math.abs(o.x - tx) < 0.01) o.lane = o.targetLane;
@@ -430,7 +489,7 @@ export class GameSession {
       }
       if (!o.passed && ahead < -(o.len / 2 + P.playerLen / 2)) {
         o.passed = true;
-        if (!o.hit && o.minGap < P.nearMissGap && this.invuln <= 0) {
+        if (!o.hit && o.kind !== 'wall' && o.minGap < P.nearMissGap && this.invuln <= 0) {
           this.nearMisses++;
           const pts = 150 * this.comboMultiplier;
           this.actionPoints += pts;
@@ -449,7 +508,8 @@ export class GameSession {
     this.stability--;
     this.stumble = GAME_RULES.offlineTime;
     this.invuln = GAME_RULES.invulnTime;
-    this.speed *= 0.5;
+    this.speed *= this.vehicle.hitKeep;
+    this.vx *= -0.5;
     this.gauge = Math.max(0, this.gauge - 25);
     this.breakCombo('CRASHED');
     this.emit({ type: 'hit', kind: o.kind, x: o.x, z: o.z });
@@ -464,7 +524,9 @@ export class GameSession {
     const inv = this.engine.inventory;
     const ok = Math.abs(inv) <= GAME_RULES.gateInventoryLimit;
     const overtime = this.lap > 0;
-    const bonus = ok ? (overtime ? GAME_RULES.overtimePassBonus : GAME_RULES.gatePassBonus) : overtime ? GAME_RULES.overtimeFailBonus : GAME_RULES.gateFailBonus;
+    const bonus = ok
+      ? overtime ? GAME_RULES.overtimePassBonus : Math.max(GAME_RULES.gateMinBonus, GAME_RULES.gatePassBonus - this.district * GAME_RULES.gateDecay)
+      : overtime ? GAME_RULES.overtimeFailBonus : GAME_RULES.gateFailBonus;
     this.timeLeft += bonus;
     if (ok) {
       this.gatesPassed++;

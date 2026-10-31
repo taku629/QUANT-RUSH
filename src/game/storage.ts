@@ -1,7 +1,7 @@
 import type { VehicleId } from './content';
 
 export type CameraMode = 'standard' | 'dramatic' | 'first';
-export type Quality = 'high' | 'low';
+export type Quality = 'auto' | 'high' | 'medium' | 'low';
 
 export type Settings = {
   sfx: boolean;
@@ -11,6 +11,14 @@ export type Settings = {
   roll: boolean;
   vehicle: VehicleId;
   fixedSeed: number | null;
+  /** reduce shake, flashes, chromatic aberration and curve intensity */
+  reduceMotion: boolean;
+  /** contextual coaching tips during play */
+  tips: boolean;
+  /** show an FPS counter */
+  showFps: boolean;
+  /** first-play tutorial completed */
+  tutorialDone: boolean;
 };
 
 export type Records = { bestScore: number; bestPnL: number; maxSpeed: number; maxCombo: number; bestDistance: number; plays: number };
@@ -23,12 +31,18 @@ const isMobile = () => typeof window !== 'undefined' && (window.matchMedia?.('(p
 export const defaultSettings = (): Settings => ({
   sfx: true,
   music: true,
-  quality: isMobile() ? 'low' : 'high',
+  quality: 'auto',
   camera: 'standard',
   roll: true,
   vehicle: 'board',
   fixedSeed: null,
+  reduceMotion: typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false),
+  tips: true,
+  showFps: false,
+  tutorialDone: false,
 });
+
+export { isMobile };
 
 export const defaultRecords = (): Records => ({ bestScore: 0, bestPnL: 0, maxSpeed: 0, maxCombo: 0, bestDistance: 0, plays: 0 });
 

@@ -85,7 +85,7 @@ test('full arcade loop: play → results → learning → retry resets state', a
     const s = (window as any).__QUANT_RUSH__.runtime.session;
     return { pnl: s.engine.pnl, inv: s.engine.inventory, fills: s.engine.fills.length, z: s.z, combo: s.combo, time: s.timeLeft, stability: s.stability };
   });
-  expect(st).toEqual({ pnl: 0, inv: 0, fills: 0, z: 0, combo: 0, time: 28, stability: st.stability });
+  expect(st).toEqual({ pnl: 0, inv: 0, fills: 0, z: 0, combo: 0, time: 30, stability: st.stability });
   expect(errors).toEqual([]);
 });
 

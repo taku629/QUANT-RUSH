@@ -43,7 +43,7 @@ export function attachInput(h: Handlers) {
     e.preventDefault();
   };
 
-  let sx = 0, sy = 0, st = 0, tracking = false, fired = false;
+  let sx = 0, sy = 0, st = 0, tracking = false, fired = false, swiped = false;
   const onStart = (e: TouchEvent) => {
     const t = e.touches[0];
     if (!t || (e.target as HTMLElement)?.closest?.('button')) return;
@@ -52,6 +52,7 @@ export function attachInput(h: Handlers) {
     st = performance.now();
     tracking = true;
     fired = false;
+    swiped = false;
   };
   const onMove = (e: TouchEvent) => {
     if (!tracking || fired || !h.isPlaying()) return;
@@ -70,11 +71,18 @@ export function attachInput(h: Handlers) {
       input.alpha = true;
       fired = true;
     }
-    if (fired) e.preventDefault();
+    if (fired) {
+      e.preventDefault();
+      // allow chained swipes in one touch (e.g. left-left): restart from here
+      sx = t.clientX;
+      sy = t.clientY;
+      fired = false;
+      swiped = true;
+    }
   };
   const onEnd = () => {
     // quick tap without a swipe: tap left/right third of the screen also steers
-    if (tracking && !fired && h.isPlaying() && performance.now() - st < 250) {
+    if (tracking && !swiped && h.isPlaying() && performance.now() - st < 250) {
       const w = window.innerWidth;
       if (sx < w * 0.28) input.left++;
       else if (sx > w * 0.72) input.right++;

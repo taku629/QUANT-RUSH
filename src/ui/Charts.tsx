@@ -5,7 +5,7 @@ import { LANE_COLORS, REGIME_STYLE } from '../game/content';
 type Seg = { regime: RegimeId; start: number; end: number };
 
 /** PnL / price / inventory over time with regime bands (SVG, no chart library). */
-export function SessionChart({ timeline, segments, dt, height = 170, mode = 'pnl' }: { timeline: TimelinePoint[]; segments: Seg[]; dt: number; height?: number; mode?: 'pnl' | 'inventory' }) {
+export function SessionChart({ timeline, segments, dt, height = 170, mode = 'pnl', markers = [], onMarker, selected }: { timeline: TimelinePoint[]; segments: Seg[]; dt: number; height?: number; mode?: 'pnl' | 'inventory'; markers?: { t: number; label: string; color: string }[]; onMarker?: (i: number) => void; selected?: number }) {
   const W = 600;
   const H = height;
   if (timeline.length < 2) return null;
@@ -45,6 +45,13 @@ export function SessionChart({ timeline, segments, dt, height = 170, mode = 'pnl
       <line x1={0} x2={W} y1={y(0)} y2={y(0)} stroke="rgba(255,255,255,0.25)" strokeDasharray="4 4" />
       <path d={area} fill={col} opacity={0.12} />
       <path d={path} fill="none" stroke={col} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+      {markers.map((m, i) => (
+        <g key={i} onClick={() => onMarker?.(i)} style={{ cursor: onMarker ? 'pointer' : 'default' }}>
+          <line x1={x(m.t)} x2={x(m.t)} y1={0} y2={H} stroke={m.color} strokeWidth={selected === i ? 3 : 1.5} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+          <circle cx={x(m.t)} cy={10} r={selected === i ? 9 : 7} fill={m.color} />
+          <text x={x(m.t)} y={14} fontSize="10" textAnchor="middle" fill="#050310" fontWeight="bold">{m.label}</text>
+        </g>
+      ))}
     </svg>
   );
 }

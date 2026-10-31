@@ -5,20 +5,19 @@ import { fx } from '../game/fx';
 import { env } from './env';
 import { active } from './active';
 
-const MAX_P = 900;
 
 /** CPU particle system (additive points) fed by fx.bursts. */
-export function Particles() {
+export function Particles({ max: MAX_P }: { max: number }) {
   const geo = useMemo(() => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX_P * 3), 3));
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(MAX_P * 3), 3));
     g.setAttribute('size', new THREE.BufferAttribute(new Float32Array(MAX_P), 1));
     return g;
-  }, []);
-  const vel = useMemo(() => new Float32Array(MAX_P * 3), []);
-  const life = useMemo(() => new Float32Array(MAX_P), []);
-  const maxLife = useMemo(() => new Float32Array(MAX_P).fill(1), []);
+  }, [MAX_P]);
+  const vel = useMemo(() => new Float32Array(MAX_P * 3), [MAX_P]);
+  const life = useMemo(() => new Float32Array(MAX_P), [MAX_P]);
+  const maxLife = useMemo(() => new Float32Array(MAX_P).fill(1), [MAX_P]);
   const cursor = useRef(0);
   const c = useMemo(() => new THREE.Color(), []);
   const mat = useMemo(
@@ -81,13 +80,13 @@ export function Particles() {
     geo.attributes.color.needsUpdate = true;
     geo.attributes.size.needsUpdate = true;
   });
-  return <points geometry={geo} material={mat} frustumCulled={false} />;
+  return <points key={MAX_P} geometry={geo} material={mat} frustumCulled={false} />;
 }
 
-const LINES = 90;
+const tmpGold = new THREE.Color('#ffd23d');
 
 /** Streaks rushing past the camera — density grows with speed / ALPHA DRIVE. */
-export function SpeedLines() {
+export function SpeedLines({ count: LINES }: { count: number }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   const { camera } = useThree();
   const data = useMemo(
@@ -97,7 +96,7 @@ export function SpeedLines() {
         const r = 3 + Math.random() * 10;
         return { x: Math.cos(a) * r, y: Math.sin(a) * r * 0.6 + 3, z: -Math.random() * 120, len: 2 + Math.random() * 6 };
       }),
-    [],
+    [LINES],
   );
   const dummy = useMemo(() => new THREE.Object3D(), []);
   useFrame((_, dt) => {
@@ -122,10 +121,10 @@ export function SpeedLines() {
     });
     ref.current.instanceMatrix.needsUpdate = true;
     const m = ref.current.material as THREE.MeshBasicMaterial;
-    m.color.copy(s.alpha > 0 ? new THREE.Color('#ffd23d') : env.primary).multiplyScalar(1.4);
+    m.color.copy(s.alpha > 0 ? tmpGold : env.primary).multiplyScalar(1.4);
   });
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, LINES]} frustumCulled={false}>
+    <instancedMesh key={LINES} ref={ref} args={[undefined, undefined, LINES]} frustumCulled={false}>
       <boxGeometry args={[0.03, 0.03, 1]} />
       <meshBasicMaterial transparent opacity={0.7} blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
     </instancedMesh>

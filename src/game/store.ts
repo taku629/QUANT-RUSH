@@ -11,8 +11,12 @@ import { input } from './input';
 import { GameSession, type EndReason, type FxEvent } from './session';
 import { DISTRICTS, LANE_COLORS, REGIME_STYLE } from './content';
 import { loadRecords, loadSettings, saveRecords, saveSettings, type Records, type Settings } from './storage';
+import { Coach, Tutorial, TUTORIAL, type Tip } from './coach';
+import { dailyInfo, ghostState, GhostRecorder, loadGhost, pushAttempt, saveGhostIfBest, seedHistory, type Attempt } from './ghost';
+import type { FlowRead } from '../sim/signals';
 
-export type Phase = 'title' | 'countdown' | 'playing' | 'paused' | 'ending' | 'results' | 'learning';
+export type Phase = 'title' | 'countdown' | 'playing' | 'paused' | 'ending' | 'results' | 'learning' | 'lab';
+export type Mode = 'arcade' | 'daily' | 'seed';
 
 export type Hud = {
   pnl: number;
@@ -40,6 +44,15 @@ export type Hud = {
   gateDist: number;
   offline: boolean;
   mid: number;
+  /** public tape signals */
+  flow: number;
+  momentum: number;
+  read: FlowRead;
+  news: string | null;
+  vol: number;
+  boost: boolean;
+  fork: boolean;
+  ghostAhead: number | null;
 };
 
 export type Popup = { id: number; text: string; sub?: string; color: string; size: 'sm' | 'md' | 'lg' | 'xl'; x: number; y: number };
@@ -67,10 +80,23 @@ export type Result = {
   segments: { regime: RegimeId; start: number; end: number }[];
   newBest: boolean;
   review: Review | null;
+  mode: Mode;
+  dailyKey: string | null;
+  /** previous attempts on the same seed (before this run) */
+  previous: Attempt[];
+  ghostSaved: boolean;
+  ramps: number;
+  boosts: number;
 };
 
 /** mutable, non-reactive runtime handles */
-export const runtime: { session: GameSession | null; demo: GameSession | null } = { session: null, demo: null };
+export const runtime: { session: GameSession | null; demo: GameSession | null; ghostRec: GhostRecorder | null; tutorial: Tutorial | null; coach: Coach | null } = {
+  session: null,
+  demo: null,
+  ghostRec: null,
+  tutorial: null,
+  coach: null,
+};
 
 type Store = {
   phase: Phase;
@@ -82,8 +108,13 @@ type Store = {
   countdown: number;
   result: Result | null;
   laneFlash: number;
+  mode: Mode;
+  tutorial: { title: string; body: string; step: number; total: number } | null;
+  tip: (Tip & { key: number }) | null;
+  skipTutorial: () => void;
+  openLab: () => void;
   setSettings: (p: Partial<Settings>) => void;
-  start: (seed?: number) => void;
+  start: (seed?: number, mode?: Mode) => void;
   beginPlay: () => void;
   pause: () => void;
   resume: () => void;
@@ -110,6 +141,20 @@ export const useGame = create<Store>((set, get) => ({
   countdown: 3,
   result: null,
   laneFlash: 0,
+  mode: 'arcade',
+  tutorial: null,
+  tip: null,
+
+  skipTutorial() {
+    runtime.tutorial?.skip();
+    if (runtime.session) runtime.session.timerFrozen = false;
+    get().setSettings({ tutorialDone: true });
+    set({ tutorial: null });
+  },
+
+  openLab() {
+    set({ phase: 'lab' });
+  },
 
   setSettings(p) {
     const settings = { ...get().settings, ...p };
@@ -119,14 +164,23 @@ export const useGame = create<Store>((set, get) => ({
     set({ settings });
   },
 
-  start(seed) {
+  start(seed, mode) {
     audio.unlock();
     const s = get().settings;
-    const sd = seed ?? s.fixedSeed ?? randomSeed();
-    runtime.session = new GameSession(sd, s.vehicle);
+    const m: Mode = mode ?? (seed !== undefined ? 'seed' : 'arcade');
+    const sd = m === 'daily' ? dailyInfo().seed : seed ?? s.fixedSeed ?? randomSeed();
+    const session = new GameSession(sd, s.vehicle);
+    runtime.session = session;
+    runtime.ghostRec = new GhostRecorder();
+    runtime.coach = new Coach();
+    const tut = !s.tutorialDone && m === 'arcade';
+    runtime.tutorial = new Tutorial(tut);
+    session.timerFrozen = tut;
+    ghostState.track = loadGhost(sd);
+    ghostState.session = session;
     fx.reset();
     input.clear();
-    set({ phase: 'countdown', countdown: 3, result: null, popups: [], news: null });
+    set({ phase: 'countdown', countdown: 3, result: null, popups: [], news: null, mode: m, tip: null, tutorial: tut ? { ...TUTORIAL[0], step: 0, total: TUTORIAL.length } : null });
     get().updateHud();
     audio.regime = 'CALM';
     audio.intensity = 0;
@@ -178,6 +232,10 @@ export const useGame = create<Store>((set, get) => ({
     rec.bestDistance = Math.max(rec.bestDistance, s.z);
     rec.plays++;
     saveRecords(rec);
+    const previous = seedHistory(s.seed);
+    pushAttempt(s.seed, { score: score.total, pnl: risk.pnl, rar: risk.rar, distance: s.z, date: new Date().toISOString() });
+    const ghostSaved = runtime.ghostRec ? saveGhostIfBest(s.seed, score.total, risk.pnl, s.vehicle.name, runtime.ghostRec) : false;
+    const mode = get().mode;
     const dt = e.cfg.dt;
     const result: Result = {
       seed: s.seed,
@@ -201,6 +259,12 @@ export const useGame = create<Store>((set, get) => ({
       segments: e.tape.segments.filter((g) => g.startTick < e.tick).map((g) => ({ regime: g.regime, start: g.startTick * dt, end: Math.min(g.endTick, e.tick) * dt })),
       newBest,
       review: null,
+      mode,
+      dailyKey: mode === 'daily' ? dailyInfo().key : null,
+      previous,
+      ghostSaved,
+      ramps: s.ramps,
+      boosts: s.boosts,
     };
     audio.stopMusic();
     audio.end();
@@ -231,6 +295,21 @@ export const useGame = create<Store>((set, get) => ({
     const e = s.engine;
     const obs = e.observe();
     const g = s.nextGate;
+    const sig = obs.signals;
+    // tutorial & coach (run at HUD rate)
+    const tut = runtime.tutorial;
+    if (tut?.active) {
+      const finished = tut.tick(s, 1 / 15);
+      if (finished) {
+        s.timerFrozen = false;
+        get().setSettings({ tutorialDone: true });
+        set({ tutorial: null });
+      } else if (tut.current && get().tutorial?.step !== tut.step) set({ tutorial: { title: tut.current.title, body: tut.current.body, step: tut.step, total: TUTORIAL.length } });
+    } else if (get().settings.tips && runtime.coach) {
+      const tip = runtime.coach.tick(s, 1 / 15);
+      if (tip) set({ tip: { ...tip, key: Date.now() } });
+    }
+    const gp = ghostState.track && ghostState.session === s ? ghostState.sample(s.t) : null;
     const prevLane = get().hud?.lane;
     set({
       laneFlash: prevLane !== undefined && prevLane !== s.quoteLane ? Date.now() : get().laneFlash,
@@ -260,6 +339,14 @@ export const useGame = create<Store>((set, get) => ({
         gateDist: g ? Math.max(0, g.z - s.z) : 0,
         offline: s.stumble > 0,
         mid: e.mid,
+        flow: 0.5 * (sig.incomingImbalance + sig.recentImbalance),
+        momentum: sig.momentum1s,
+        read: sig.read,
+        news: sig.news?.text ?? null,
+        vol: obs.realizedVol,
+        boost: s.boost > 0,
+        fork: s.besideWall(),
+        ghostAhead: gp ? gp.z - s.z : null,
       },
     });
   },
@@ -287,7 +374,7 @@ export function dispatchEvents(events: FxEvent[]) {
         audio.fill(s?.combo ?? 0, tier);
         fx.burst({ color: f.qty < 0 ? '#3dff8b' : '#ff3d6e', count: 18 + tier * 8, speed: 6 + tier * 2, y: 1.3 });
         fx.fovKick = Math.min(6, fx.fovKick + 1.2);
-        st.popup({ text: money(f.spread + f.rebate), sub: `${f.qty < 0 ? 'SOLD' : 'BOUGHT'} ${Math.abs(f.qty)} @ ${f.price.toFixed(2)}`, color: LANE_COLORS[f.lane], size: tier >= 3 ? 'lg' : 'md', x: 50 + (Math.random() - 0.5) * 16, y: 52 });
+        st.popup({ text: money(f.spread + f.rebate), sub: `${f.qty < 0 ? 'SOLD' : 'BOUGHT'} ${Math.abs(f.qty)} @ ${f.price.toFixed(2)}`, color: LANE_COLORS[f.lane], size: tier >= 3 ? 'md' : 'sm', x: 50 + (Math.random() - 0.5) * 22, y: 66 });
         break;
       }
       case 'miss':
@@ -312,12 +399,14 @@ export function dispatchEvents(events: FxEvent[]) {
         break;
       case 'nearmiss':
         audio.nearMiss();
+        fx.hitstop = 0.05;
         fx.fovKick = Math.min(10, fx.fovKick + 5);
         fx.burst({ x: ev.x * 0.5, color: '#ffe23d', count: 20, speed: 10, life: 0.5 });
         st.popup({ text: ev.air ? 'AIR CLEAR!' : 'NEAR MISS!', sub: `+${ev.points}`, color: '#ffe23d', size: 'lg', y: 30 });
         break;
       case 'hit':
         audio.hit();
+        fx.hitstop = 0.12;
         fx.shake = 1;
         fx.flash = 0.6;
         fx.flashColor = '#ff2a4d';
@@ -333,8 +422,34 @@ export function dispatchEvents(events: FxEvent[]) {
       case 'jump':
         audio.jump();
         break;
+      case 'ramp':
+        audio.jump();
+        audio.boost();
+        fx.fovKick = Math.min(12, fx.fovKick + 6);
+        fx.burst({ color: '#00f0ff', count: 30, speed: 8, life: 0.6, y: 0.3 });
+        st.popup({ text: 'RAMP!', color: '#00f0ff', size: 'md', y: 34 });
+        break;
+      case 'boost':
+        audio.boost();
+        fx.fovKick = Math.min(12, fx.fovKick + 5);
+        fx.burst({ color: '#ffd23d', count: 24, speed: 6, life: 0.5, y: 0.3, z: 1 });
+        break;
+      case 'bump':
+        audio.denied();
+        st.popup({ text: 'ROUTE LOCKED', sub: '分岐中は中央の壁を越えられない', color: '#8892b0', size: 'sm', y: 64 });
+        break;
+      case 'block':
+        if (ev.filled) {
+          audio.combo(10);
+          fx.flash = Math.max(fx.flash, 0.3);
+          fx.flashColor = '#ffd23d';
+          st.popup({ text: `BLOCK ${ev.side === 'BUY' ? 'SOLD' : 'BOUGHT'} ${ev.qty}`, sub: '大口約定 — 在庫に注意', color: '#ffd23d', size: 'lg', y: 32 });
+        }
+        break;
       case 'land':
         audio.land();
+        fx.landDip = 0.6;
+        fx.burst({ color: '#8fa0ff', count: 14, speed: 4, life: 0.4, y: 0.1 });
         break;
       case 'lane':
         audio.lane();

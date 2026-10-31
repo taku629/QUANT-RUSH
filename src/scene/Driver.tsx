@@ -59,12 +59,15 @@ export function Driver() {
 
     const s = runtime.session;
     if (s && phase === 'playing') {
-      acc.current += delta;
+      // hit-stop: freeze the simulation for a few frames on impacts / near misses
+      if (fx.hitstop > 0) fx.hitstop -= rawDelta;
+      else acc.current += delta;
       let first = true;
       while (acc.current >= FIXED_DT) {
         s.update(first ? input.consume() : NO_INPUT);
         first = false;
         acc.current -= FIXED_DT;
+        runtime.ghostRec?.record(s);
         const ev = s.drainEvents();
         if (ev.length) dispatchEvents(ev);
         if (s.ended) break;
@@ -86,9 +89,10 @@ export function Driver() {
     fx.flash = Math.max(0, fx.flash - delta * 1.6);
     fx.fovKick = Math.max(0, fx.fovKick - delta * 9);
     fx.lightning = Math.max(0, fx.lightning - delta * 2.5);
+    fx.landDip = Math.max(0, fx.landDip - delta * 4);
     const flashEl = document.getElementById('flash');
     if (flashEl) {
-      flashEl.style.opacity = String(Math.min(0.75, fx.flash));
+      flashEl.style.opacity = String(Math.min(0.75, fx.flash) * (st.settings.reduceMotion ? 0.3 : 1));
       flashEl.style.background = `radial-gradient(circle, transparent 30%, ${fx.flashColor})`;
     }
   });

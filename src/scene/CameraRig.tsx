@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { fx } from '../game/fx';
 import { useGame } from '../game/store';
 import { active } from './active';
+import { bendUniform } from './bend';
 
 /** Three camera modes (standard / dramatic / first-person) + shake, FOV kick, roll, title orbit. */
 export function CameraRig() {
@@ -49,24 +50,34 @@ export function CameraRig() {
       tl.set(s.x * (0.8 - portrait * 0.5), 1.4 - portrait * 0.6, -12);
       fov = 64 + speedK * 12 + portrait * 16;
     }
+    const playing = phase === 'playing' || phase === 'countdown';
+    if (playing) {
+      // look into the curve / over the crest, like a real chase cam
+      tl.x += bendUniform.value.x * 2600;
+      tl.y += bendUniform.value.y * 1800;
+      tp.y += Math.max(0, -bendUniform.value.y) * 900;
+      tp.y -= fx.landDip * 0.5;
+      if (s.boost > 0) fov += 8;
+    }
     if (s.alpha > 0 && phase === 'playing') fov += 10;
     fov += fx.fovKick;
     const k = phase === 'title' ? 1 - Math.exp(-dt * 2) : 1 - Math.exp(-dt * (mode === 'first' ? 30 : 9));
     pos.current.lerp(tp, k);
     look.current.lerp(tl, k);
     cam.position.copy(pos.current);
-    if (fx.shake > 0) {
+    const reduce = st.settings.reduceMotion;
+    if (fx.shake > 0 && !reduce) {
       const a = fx.shake * fx.shake * 0.5;
       cam.position.x += (Math.random() - 0.5) * a;
       cam.position.y += (Math.random() - 0.5) * a;
     }
     // continuous rumble in crash markets
-    if (s.engine.regime === 'CRASH' && phase === 'playing') {
+    if (s.engine.regime === 'CRASH' && phase === 'playing' && !reduce) {
       cam.position.x += (Math.random() - 0.5) * 0.06;
       cam.position.y += (Math.random() - 0.5) * 0.06;
     }
     cam.lookAt(look.current);
-    const targetRoll = st.settings.roll && phase === 'playing' ? s.tilt * (mode === 'dramatic' ? 0.45 : 0.25) : 0;
+    const targetRoll = st.settings.roll && phase === 'playing' ? s.tilt * (mode === 'dramatic' ? 0.45 : 0.25) - bendUniform.value.x * 120 : 0;
     roll.current += (targetRoll - roll.current) * Math.min(1, dt * 6);
     cam.rotateZ(roll.current);
     cam.fov += (fov - cam.fov) * Math.min(1, dt * 5);

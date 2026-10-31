@@ -57,7 +57,7 @@ export function Sky() {
     g.setIndex(idx);
     return g;
   }, []);
-  const chartLine = useMemo(() => new THREE.Line(chartGeo, new THREE.LineBasicMaterial({ toneMapped: false, fog: false })), [chartGeo]);
+  const chartLine = useMemo(() => new THREE.Line(chartGeo, new THREE.LineBasicMaterial({ toneMapped: false, fog: false, userData: { noBend: true } })), [chartGeo]);
   const fillMat = useRef<THREE.MeshBasicMaterial>(null);
   const chart = useRef<THREE.Group>(null);
   const bolt = useRef<THREE.Mesh>(null);
@@ -125,17 +125,17 @@ export function Sky() {
         <sphereGeometry args={[900, 32, 16]} />
       </mesh>
       <points geometry={stars}>
-        <pointsMaterial color="#9fb4ff" size={1.6} sizeAttenuation={false} transparent opacity={0.8} fog={false} />
+        <pointsMaterial color="#9fb4ff" size={1.6} sizeAttenuation={false} transparent opacity={0.8} fog={false} userData={{ noBend: true }} />
       </points>
       <group ref={chart}>
         <primitive object={chartLine} />
         <mesh geometry={chartFill}>
-          <meshBasicMaterial ref={fillMat} transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} fog={false} toneMapped={false} />
+          <meshBasicMaterial ref={fillMat} userData={{ noBend: true }} transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} fog={false} toneMapped={false} />
         </mesh>
       </group>
       <mesh ref={bolt} position={[0, 150, -500]} visible={false}>
         <boxGeometry args={[2, 260, 2]} />
-        <meshBasicMaterial color="#e0e6ff" toneMapped={false} fog={false} />
+        <meshBasicMaterial color="#e0e6ff" toneMapped={false} fog={false} userData={{ noBend: true }} />
       </mesh>
     </group>
   );

@@ -110,6 +110,10 @@ class AudioEngine {
     this.tone(300, 0.22, 'sine', 0.18, { slide: 800 });
     this.noiseHit(0.15, 0.08, 1800, 'highpass');
   }
+  boost() {
+    this.noiseHit(0.5, 0.22, 600, 'bandpass', { sweep: 4000 });
+    this.tone(220, 0.4, 'sawtooth', 0.06, { slide: 660 });
+  }
   land() {
     this.noiseHit(0.1, 0.14, 300, 'lowpass');
   }

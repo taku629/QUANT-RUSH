@@ -11,6 +11,10 @@ export const fx = {
   lightning: 0,
   fovKick: 0,
   slowmo: 1,
+  /** brief freeze-frame on impacts (seconds of real time) */
+  hitstop: 0,
+  /** camera dip on landing */
+  landDip: 0,
   reset() {
     this.shake = 0;
     this.flash = 0;
@@ -19,6 +23,8 @@ export const fx = {
     this.lightning = 0;
     this.fovKick = 0;
     this.slowmo = 1;
+    this.hitstop = 0;
+    this.landDip = 0;
   },
   burst(b: Partial<Burst> & { color: string }) {
     this.bursts.push({ x: 0, y: 1, z: 0, count: 24, speed: 8, life: 0.7, ...b });

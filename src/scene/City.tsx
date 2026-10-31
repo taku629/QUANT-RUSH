@@ -16,8 +16,8 @@ function hash(n: number) {
 
 type Slot = { wz: number; seed: number };
 
-export function City({ quality }: { quality: 'high' | 'low' }) {
-  const n = quality === 'high' ? N : 70;
+export function City({ density }: { density: number }) {
+  const n = Math.round(N * density);
   const bodies = useRef<THREE.InstancedMesh>(null);
   const roofs = useRef<THREE.InstancedMesh>(null);
   const tex = useMemo(() => windowsTexture(), []);
@@ -77,16 +77,16 @@ export function City({ quality }: { quality: 'high' | 'low' }) {
 
   return (
     <group>
-      <instancedMesh ref={bodies} args={[undefined, undefined, n * 2]} frustumCulled={false}>
+      <instancedMesh key={`b${n}`} ref={bodies} args={[undefined, undefined, n * 2]} frustumCulled={false}>
         <boxGeometry args={[1, 1, 1]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </instancedMesh>
-      <instancedMesh ref={roofs} args={[undefined, undefined, n * 2]} frustumCulled={false}>
+      <instancedMesh key={`r${n}`} ref={roofs} args={[undefined, undefined, n * 2]} frustumCulled={false}>
         <boxGeometry args={[1, 1, 1]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
       <Signs />
-      <Candles quality={quality} />
+      <Candles count={Math.round(70 * density)} />
       <Tickers />
     </group>
   );
@@ -138,8 +138,7 @@ function Signs() {
 }
 
 /** Floating candlestick holograms above the skyline (decorative, colored by recent returns). */
-function Candles({ quality }: { quality: 'high' | 'low' }) {
-  const count = quality === 'high' ? 70 : 36;
+function Candles({ count }: { count: number }) {
   const ref = useRef<THREE.InstancedMesh>(null);
   const items = useMemo(() => Array.from({ length: count }, (_, i) => ({ wz: i * 11, seed: i })), [count]);
   const dummy = useMemo(() => new THREE.Object3D(), []);
@@ -166,7 +165,7 @@ function Candles({ quality }: { quality: 'high' | 'low' }) {
     if (ref.current.instanceColor) ref.current.instanceColor.needsUpdate = true;
   });
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, count]} frustumCulled={false}>
+    <instancedMesh key={count} ref={ref} args={[undefined, undefined, count]} frustumCulled={false}>
       <boxGeometry args={[1, 1, 1]} />
       <meshBasicMaterial transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
     </instancedMesh>

@@ -92,3 +92,26 @@ describe('GameSession', () => {
     expect(s.gauge).toBe(0);
   });
 });
+
+import { dailyInfo, GhostRecorder } from './ghost';
+describe('replayability helpers', () => {
+  it('daily seed is stable within a JST day and changes at JST midnight', () => {
+    const a = dailyInfo(new Date('2026-10-31T14:59:00Z')); // 23:59 JST
+    const b = dailyInfo(new Date('2026-10-31T15:00:00Z')); // 00:00 JST next day
+    const c = dailyInfo(new Date('2026-10-31T03:00:00Z'));
+    expect(a.key).toBe('2026-10-31');
+    expect(b.key).toBe('2026-11-01');
+    expect(a.seed).toBe(c.seed);
+    expect(a.seed).not.toBe(b.seed);
+  });
+  it('ghost recorder samples 10x per second', () => {
+    const s = new GameSession(3, 'board');
+    const rec = new GhostRecorder();
+    for (let i = 0; i < 120; i++) {
+      s.update(none);
+      rec.record(s);
+    }
+    expect(rec.z.length).toBeGreaterThanOrEqual(20);
+    expect(rec.z.length).toBeLessThanOrEqual(22);
+  });
+});

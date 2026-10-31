@@ -5,6 +5,7 @@ import { fx } from '../game/fx';
 import { runtime } from '../game/store';
 import type { VisibleOrder } from '../sim/engine';
 import { glowTexture } from './textures';
+import { Blocks } from './Blocks';
 import { env } from './env';
 import { active } from './active';
 
@@ -32,7 +33,7 @@ export function Orders() {
     const s = active();
     if (!s) return;
     const e = s.engine;
-    const orders: VisibleOrder[] = e.done ? [] : e.visibleOrders();
+    const orders: VisibleOrder[] = e.done ? [] : e.visibleOrders().filter((o) => o.block === undefined);
     const lead = e.leadTicks;
     const frac = (s.frame % 3) / 3;
     const ids = new Set(orders.map((o) => o.id));
@@ -102,6 +103,7 @@ export function Orders() {
 
   return (
     <group>
+      <Blocks />
       {Array.from({ length: POOL }, (_, i) => (
         <group key={i} ref={(g) => { groups.current[i] = g; }} visible={false}>
           <mesh>

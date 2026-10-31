@@ -27,6 +27,29 @@ function useCountUp(target: number, ms = 1200) {
   return v;
 }
 
+function SeedCompare() {
+  const r = useGame((s) => s.result)!;
+  const prev = r.previous;
+  const last = prev[prev.length - 1];
+  const best = prev.reduce<typeof last | undefined>((a, b) => (!a || b.score > a.score ? b : a), undefined);
+  return (
+    <div className="seed-compare">
+      <span className="seed-label">{r.mode === 'daily' ? `DAILY ${r.dailyKey} (JST)` : `SEED ${r.seed}`} · ATTEMPT #{prev.length + 1}</span>
+      {last ? (
+        <>
+          <span>前回 {last.score.toLocaleString()} → 今回 <b className={r.score.total >= last.score ? 'up' : 'down'}>{r.score.total.toLocaleString()}</b></span>
+          <span>PnL 前回 {last.pnl >= 0 ? '+' : '−'}${Math.abs(last.pnl).toFixed(0)} → <b className={r.risk.pnl >= last.pnl ? 'up' : 'down'}>{r.risk.pnl >= 0 ? '+' : '−'}${Math.abs(r.risk.pnl).toFixed(0)}</b></span>
+          {best && <span>このシードの自己ベスト {Math.max(best.score, r.score.total).toLocaleString()}</span>}
+        </>
+      ) : (
+        <span>このシードは初挑戦。SAME MARKET で同じ市場に再挑戦できます</span>
+      )}
+      {r.ghostSaved && <span className="ghost-tag">GHOST SAVED — 次回この市場で自分のゴーストと走れます</span>}
+      <span className="local-note">記録はこの端末のブラウザ内にのみ保存されます</span>
+    </div>
+  );
+}
+
 export function Results() {
   const r = useGame((s) => s.result);
   const start = useGame((s) => s.start);
@@ -61,6 +84,7 @@ export function Results() {
         </div>
       </div>
 
+      <SeedCompare />
       <div className="res-grid">
         <div className="res-card">
           <h3>MARKET MAKING</h3>
@@ -81,6 +105,7 @@ export function Results() {
             <dt>最高速度</dt><dd>{r.maxSpeed.toFixed(0)} km/h</dd>
             <dt>最大コンボ</dt><dd>{r.maxCombo}</dd>
             <dt>ニアミス / 破壊</dt><dd>{r.nearMisses} / {r.smashes}</dd>
+            <dt>ランプ / ブースト</dt><dd>{r.ramps} / {r.boosts}</dd>
             <dt>衝突 / ゲート</dt><dd>{r.collisions} / {r.gatesPassed}✓ {r.gatesFailed}✕</dd>
           </dl>
         </div>
@@ -99,7 +124,7 @@ export function Results() {
 
       <div className="res-actions">
         <button className="play-btn" onClick={() => { audio.click(); start(); }} data-testid="retry">RETRY <small>R</small></button>
-        <button className="ghost-btn" onClick={() => start(r.seed)}>SAME MARKET (SEED {r.seed})</button>
+        <button className="ghost-btn" onClick={() => start(r.seed, r.mode === 'daily' ? 'daily' : 'seed')}>SAME MARKET (SEED {r.seed})</button>
         <button className="ghost-btn accent" onClick={openLearning} data-testid="learning">LEARNING REPORT <small>L</small></button>
         <button className="ghost-btn" onClick={toTitle}>TITLE</button>
       </div>
