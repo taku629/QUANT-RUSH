@@ -18,7 +18,7 @@ const makers: (() => Strategy)[] = [
 console.log(`QUANT LAB — ${nSeeds} seeds × ${seconds}s`);
 console.log('strategy'.padEnd(28), 'meanPnL', ' stdPnL', ' sharpe', '  maxDD', ' fills', ' spread', ' invPnL', ' hedge$');
 for (const mk of makers) {
-  const rows = [];
+  const rows: ReturnType<typeof runEpisode>['stats'][] = [];
   for (let s = 1; s <= nSeeds; s++) rows.push(runEpisode(s * 7919, mk(), seconds).stats);
   const avg = (f: (r: (typeof rows)[0]) => number) => rows.reduce((a, r) => a + f(r), 0) / rows.length;
   const m = avg((r) => r.pnl);

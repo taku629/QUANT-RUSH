@@ -7,7 +7,6 @@ import { generateTape, type MarketTape, type TakerOrder } from './tape';
 import { computeScore, riskStats } from './scoring';
 import { buildReview } from './analysis';
 
-const EPS = 1e-6;
 
 /** Build a hand-made tape with a flat price and given orders, for exact accounting checks. */
 function flatTape(orders: Partial<TakerOrder>[], mids?: number[]): MarketTape {
