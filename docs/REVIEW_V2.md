@@ -59,3 +59,20 @@ Phase 3 market model v2 (episodes, public signals, block orders, temporary impac
 pattern spawner with reachability guarantee, ramps, boost pads, oncoming traffic, forks, per-vehicle handling, hit-stop),
 Phase 5 tutorial / coach / timeline with counterfactual replays, Phase 7 quality presets, reduced motion, WebGL fallback,
 Phase 2 district geometry & landmarks, Phase 6 daily / same-seed / ghost / Quant Lab screen.
+
+## v2 verification (computer-based; no human playtest was possible in this environment)
+
+| Check | v1 | v2 |
+|---|---|---|
+| Vitest | 35 | 53 (all pass; the 35 v1 tests are kept — 1 updated: benchmark count 4→5 because a 5th bot was added) |
+| Playwright E2E (desktop + Pixel 7) | 4 | 8 (all pass) |
+| Regime memoriser vs tape reader (200 seeds × 90 s) | +395 vs +371 | +201 vs **+340** (RAR 0.68 vs 1.05) |
+| Best fixed lane | DEF −12 | DEF +174 (RAR 0.44 < reader 1.05) |
+| Hedge every chance | +92 | −168 (hedging is not free) |
+| ALPHA rebate / spread income | — | ≈6% (no farming) |
+| Avg run (autopilot) | 76 s, 4.6 collisions | BOARD 69 s / BIKE 88 s / POD 60 s, 0.2–0.7 collisions |
+| Idle player | KNOCKOUT ~22 s | KNOCKOUT ~32 s |
+| Sim CPU cost | — | 13 µs / frame, observe() 11 µs, learning review 128 ms once |
+
+Not verified: real-device FPS (only headless SwiftShader CPU rendering, ~6–12 FPS, which says nothing about GPUs),
+audio quality by ear, and human fun/difficulty.

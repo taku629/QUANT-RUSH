@@ -1,22 +1,35 @@
-/** Balance check: run the autopilot (and an idle player) over many seeds and report run length / outcomes. */
+/**
+ * Balance check (computer verification, not a human playtest):
+ * autopilot drivers on each vehicle + an idle player, over many seeds.
+ */
 import { GameSession } from '../src/game/session';
 import { autopilot } from '../src/game/autopilot';
+import type { VehicleId } from '../src/game/content';
 
 const N = Number(process.argv[2] ?? 40);
-for (const mode of ['autopilot', 'idle'] as const) {
-  const rows: { t: number; reason: string | null; d: number; pnl: number; coll: number; nm: number; gp: number; gf: number }[] = [];
+type Row = { t: number; reason: string | null; d: number; pnl: number; coll: number; nm: number; gp: number; gf: number; rebate: number; spread: number; alphas: number; ramps: number };
+const run = (vehicle: VehicleId, idle: boolean) => {
+  const rows: Row[] = [];
   for (let k = 1; k <= N; k++) {
-    const s = new GameSession(k * 1013, 'board');
+    const s = new GameSession(k * 1013, vehicle);
     let f = 0;
     while (!s.ended && f < 60 * 300) {
-      s.update(mode === 'autopilot' ? autopilot(s, f) : { left: 0, right: 0, jump: false, hedge: false, alpha: false });
+      s.update(idle ? { left: 0, right: 0, jump: false, hedge: false, alpha: false } : autopilot(s, f));
       s.drainEvents();
       f++;
     }
-    rows.push({ t: s.t, reason: s.endReason, d: s.district, pnl: s.engine.pnl, coll: s.collisions, nm: s.nearMisses, gp: s.gatesPassed, gf: s.gatesFailed });
+    const e = s.engine;
+    rows.push({ t: s.t, reason: s.endReason, d: s.district, pnl: e.pnl, coll: s.collisions, nm: s.nearMisses, gp: s.gatesPassed, gf: s.gatesFailed, rebate: e.rebatePnL, spread: e.spreadPnL, alphas: s.alphaCount, ramps: s.ramps });
   }
-  const avg = (fn: (r: (typeof rows)[0]) => number) => (rows.reduce((a, r) => a + fn(r), 0) / rows.length).toFixed(1);
+  const avg = (fn: (r: Row) => number) => rows.reduce((a, r) => a + fn(r), 0) / rows.length;
   const reasons: Record<string, number> = {};
   rows.forEach((r) => (reasons[r.reason ?? '?'] = (reasons[r.reason ?? '?'] ?? 0) + 1));
-  console.log(mode, 'len', avg((r) => r.t), 's  districts', avg((r) => r.d), ' pnl', avg((r) => r.pnl), ' collisions', avg((r) => r.coll), ' nearMiss', avg((r) => r.nm), ' gates ok/fail', avg((r) => r.gp), avg((r) => r.gf), JSON.stringify(reasons));
-}
+  console.log(
+    `${(idle ? 'idle' : 'autopilot') + ' ' + vehicle}`.padEnd(20),
+    `len ${avg((r) => r.t).toFixed(1)}s`, `districts ${avg((r) => r.d).toFixed(1)}`, `coll ${avg((r) => r.coll).toFixed(1)}`, `nearMiss ${avg((r) => r.nm).toFixed(1)}`,
+    `gates ${avg((r) => r.gp).toFixed(1)}/${avg((r) => r.gf).toFixed(1)}`, `ALPHA ${avg((r) => r.alphas).toFixed(1)}`, `ramps ${avg((r) => r.ramps).toFixed(1)}`,
+    `pnl ${avg((r) => r.pnl).toFixed(0)}`, `rebate/spread ${((100 * avg((r) => r.rebate)) / Math.max(1, avg((r) => r.spread))).toFixed(1)}%`, JSON.stringify(reasons),
+  );
+};
+for (const v of ['board', 'bike', 'pod'] as VehicleId[]) run(v, false);
+run('board', true);

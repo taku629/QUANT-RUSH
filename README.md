@@ -4,17 +4,32 @@
 
 兜町 → 大手町 → 丸の内 → 六本木 → 渋谷。高速道路のような金融都市を駆け抜けながら、あなたは**マーケットメイカー**として次々に飛んでくる注文を捌きます。走るレーンがそのまま提示スプレッドになり、障害物を避け、ニアミスでゲージを溜め、ALPHA DRIVE で街を突き破る。金融の仕組みを知らなくても遊べ、知っている人ほど深く戦略を練れるゲームです。
 
-![title](docs/screenshots/title.jpg)
+![title](docs/screenshots/v2/title.jpg)
 
-| プレイ画面 | 暴落 + ALPHA DRIVE |
+| 初回チュートリアル（時間停止） | 暴落中（TAPE が一方向フローを警告） |
 |---|---|
-| ![play](docs/screenshots/play.jpg) | ![crash](docs/screenshots/crash-alpha.jpg) |
-| **リザルト** | **LEARNING REPORT** |
-| ![results](docs/screenshots/results.jpg) | ![learning](docs/screenshots/learning.jpg) |
+| ![tutorial](docs/screenshots/v2/tutorial.jpg) | ![crash](docs/screenshots/v2/crash.jpg) |
+| **5地区（兜町・大手町・丸の内・六本木）** | **渋谷** |
+| ![districts](docs/screenshots/v2/districts.jpg) | ![shibuya](docs/screenshots/v2/shibuya.jpg) |
+| **LEARNING：この瞬間どうすべきだったか（反実仮想リプレイ）** | **QUANT LAB** |
+| ![learning](docs/screenshots/v2/learning.jpg) | ![lab](docs/screenshots/v2/lab.jpg) |
 
-<p align="center"><img src="docs/screenshots/mobile-title.jpg" width="220"> <img src="docs/screenshots/mobile-play.jpg" width="220"></p>
+<p align="center"><img src="docs/screenshots/v2/mobile-play.jpg" width="260"></p>
+
+v1 のスクリーンショットは `docs/screenshots/*.jpg`、v2 は `docs/screenshots/v2/`。v1→v2 のレビューは [docs/REVIEW_V2.md](docs/REVIEW_V2.md)。
 
 ---
+
+## v2 で変わったこと
+
+- **走る楽しさ**：カーブと起伏（頂点シェーダーで世界を曲げる）、ランプ大ジャンプ、ブーストパッド、対向車（ヘッドライト＋赤い矢印で予告）、中央壁で道が分かれる**分岐**、地区内の「導入→盛り上がり→息継ぎ→山場→ゲート前の直線」のペース配分、最初の15秒で主要アクションを体験できる構成、ヒットストップ、着地の沈み込み、車両ごとのバネ式ハンドリング。
+- **不可避な衝突をなくす仕組み**：障害物は「プレイヤーが出会う地点」で行に変換され、前の行から車線変更で到達できる空きレーンがある場合だけ配置されます（テストで独立に再検証）。
+- **5地区の個性**：建物のシルエット（低層石造／超高層ガラス／赤レンガ／尖塔／密集中層）、街路の装飾（提灯、空中回廊、街路樹とアーチの地下道、光の柱、スクランブル交差点と巨大スクリーン）、ランドマーク（証券取引所、ツインタワー、ドーム駅舎、赤白の鉄塔、円筒ビル）。
+- **金融戦略の深さ（市場モデル v2）**：レジームの下に見えない**フロー・エピソード**（両方向／小口殺到／情報トレーダーの急襲／公表済みの大口フロー）を導入。最適なレーンは**レジーム表示ではなく、観測できるテープ**（注文の偏り・モメンタム・リング・ニュース）から判断する設計に。
+- **走行と金融の一体化**：レーン上に立つ **BLOCK 注文**（そのレーンを通った時だけ約定）、分岐で**ルート＝スプレッドを確定**、衝突でクォート停止、ALPHA DRIVE はリベート＋ヘッジ手数料免除（どちらも別建て計上）。
+- **学習体験**：初回チュートリアル（時間停止・スキップ可）、状況に応じたコーチングTIPS、終了後に**同じ市場で判断だけ変えて再シミュレーション**した「この瞬間どうすべきだったか」のタイムライン。
+- **リプレイ性**：SAME SEED 再挑戦と前回比較、GHOST（自己ベストの走行を半透明表示）、DAILY CHALLENGE（日本時間の日付から共通シード）、QUANT LAB 画面。記録はすべて端末内（グローバルランキングはありません）。
+- **品質**：画質 AUTO/HIGH/MEDIUM/LOW（実測FPSで自動調整）、揺れ・点滅を抑える設定（OSの「視差効果を減らす」に追従）、FPS表示、WebGL非対応／GPUリセット時の案内画面、1タッチ中の連続スワイプ。
 
 ## 遊び方
 
@@ -22,7 +37,7 @@
 
 | PC | スマートフォン | アクション |
 |---|---|---|
-| `A` / `←`・`D` / `→` | 左右スワイプ（画面端タップでも可） | レーン移動 = スプレッド変更 |
+| `A` / `←`・`D` / `→` | 左右スワイプ（1タッチで連続可・画面端タップでも可） | レーン移動 = スプレッド変更 |
 | `W` / `↑` | 上スワイプ | ジャンプ（低いバリアを飛び越える） |
 | `Space` | HEDGE ボタン | ヘッジ：在庫をゼロにする（コストあり・3秒クールダウン） |
 | `Shift` / `S` / `↓` | 下スワイプ / ALPHA ボタン | ALPHA DRIVE 発動（ゲージ満タン時） |
@@ -33,11 +48,11 @@
 ### ルール
 
 - プレイヤーは自動で前進。**残り時間がゼロ**、**耐久ゼロ（KNOCKOUT）**、**PnL が −$3,000（STOPPED OUT）** のいずれかで終了。
-- 開始時の持ち時間は 28 秒。各地区の終点にある **SETTLEMENT GATE** を通過すると時間が延長されます。
-  - ゲートでは**在庫チェック**：|在庫| ≤ 500 株なら **PASS +18秒**（耐久1回復・ボーナス）、超過なら **FAIL +8秒**。
+- 開始時の持ち時間は 30 秒（初回チュートリアル中は停止）。各地区の終点にある **SETTLEMENT GATE** を通過すると時間が延長されます。
+  - ゲートでは**在庫チェック**：|在庫| ≤ 500 株なら **PASS +16秒**（地区が進むごとに −1.5秒、最低 +9秒。耐久1回復・ボーナス）、超過なら **FAIL +6秒**。
   - → ゲート前にヘッジするか、在庫を偏らせない立ち回りが必要。リスク管理が「先に進む力」になります。
 - 渋谷に到着すると GOAL ボーナス。以降は **OVERTIME LAP**（高速・高密度）で時間が尽きるまで周回。
-- 1プレイは通常 60〜90 秒（自動操縦での平均 76 秒）。
+- 1プレイは通常 60〜90 秒（自動操縦での平均：BOARD 69秒 / BIKE 88秒 / POD 60秒）。
 
 ### レーン = あなたのスプレッド
 
@@ -113,7 +128,41 @@ PnL ≡ SpreadPnL + RebatePnL − HedgeCost + InventoryPnL     （InventoryPnL =
 
 `engine.observe()` が返すのは現在の仲値・レジーム・在庫・実現ボラ・VaR と、**すでに出現して飛来中の注文**（side, qty, 緊急度リング, 到着までの時間）のみ。`informed` フラグ・`willingness` の正確な値・将来価格は観測に含まれません（テストで検証）。学習レポートだけがゲーム終了後に情報トレーダーの割合などを開示します。
 
-### レーン設計（常に同じレーンが有利にならない）
+### 市場モデル v2：フロー・エピソードと観測シグナル
+
+レジーム（CALM / TRENDING / VOLATILE / CRASH）はボラティリティ・注文の多さ・ヘッジ費用を決める「マクロ環境」です。その下で、2〜6秒単位の**見えないフロー・エピソード**が切り替わります（`src/sim/config.ts` の `EPISODE_MIX`）。
+
+| エピソード | 何が起きるか | 観測できる手掛かり | 有利な対応 |
+|---|---|---|---|
+| TWO_SIDED | 両方向のノイズ注文 | FLOW の偏り小 | 注文のリング（緊急度）に合うスプレッド |
+| RUSH | リングの少ない小口が両方向から殺到 | 注文数↑・平均リング↓ | 狭いスプレッドで回転 |
+| TOXIC | 情報トレーダーの急襲＋追随するノイズ。価格がその方向にドリフト | 一方向の偏り＋同じ向きのモメンタム（ニュースなし） | 広げる・逆向きの在庫をヘッジ |
+| SWEEP | 公表済みの強制売買（リバランス等）。価格を**一時的に**押し、終わると戻る | NEWS が公表される | 広げてプレミアムを取り、慌ててヘッジしない |
+
+- 価格 = 基礎価値（ランダムウォーク＋レジーム＋TOXIC のドリフト）＋ 一時的インパクト（SWEEP の注文量に比例、半減期 1.6秒）。
+- **BLOCK 注文**：500〜800株の大口が特定レーンに現れ、そのレーンにいる時だけ取引できる（約定判定 `ROUTE`）。
+- 観測シグナル（`src/sim/signals.ts`）：見えている注文と直近2秒の公開約定の偏り、1秒/3秒モメンタム、注文数、平均リング、公表ニュース。未来価格・`informed`・正確な willingness・queueDraw は**一切参照しない**ことをテストで確認（それらを書き換えても出力が変わらない）。
+- FLOW の「一方向」判定が出た時に TOXIC である確率は基準比 1.8倍以上（ただし完全ではない＝運ゲーでも答え合わせでもない）。
+
+### 戦略比較（200 シード × 90 秒、同一市場・金融戦略のみ）
+
+| 戦略 | 平均 PnL | 標準偏差 | RAR | 最大DD |
+|---|---|---|---|---|
+| FIXED AGGRESSIVE | −737 | 928 | −0.91 | 1457 |
+| FIXED BALANCED | −79 | 985 | 0.08 | 1243 |
+| FIXED DEFENSIVE | +174 | 1076 | 0.44 | 1166 |
+| REGIME MEMORIZER（レジーム表示だけで判断） | +201 | 588 | 0.68 | 620 |
+| **SIGNAL READER（テープを読む）** | **+340** | 657 | **1.05** | 592 |
+| FIXED BALANCED + 毎回ヘッジ | −168 | 671 | −0.08 | 881 |
+| RANDOM | −427 | 819 | −0.52 | 1170 |
+
+v1 では「レジーム暗記」(+395) がテープ読み (+371) と同等でしたが、v2 ではテープを読む戦略が約 1.7 倍の利益と高い RAR を出します。同じ CALM の中でも、両方向なら AGGRESSIVE、TOXIC なら DEFENSIVE、SWEEP なら BALANCED が最良になる（テスト済み）。
+
+### RAR（リスク調整後リターン指標）について
+
+ゲーム内の指標は **RAR = PnL ÷ (1秒ごとのPnL変化の標準偏差 × √秒数)**（σ×√T は最低 $25）。1セッション内でどれだけ滑らかに稼いだかを測るゲーム独自の指標で、無リスク金利を使わず年率化もしないため、**一般的な Sharpe Ratio とは異なります**（v1 で "Sharpe" と表示していたものを改名）。
+
+### v1 のレーン設計（参考）
 
 `npm run lab` の結果（200 シード × 90 秒、同一市場で比較）：
 
@@ -140,12 +189,12 @@ PnL ≡ SpreadPnL + RebatePnL − HedgeCost + InventoryPnL     （InventoryPnL =
 ### スコア
 
 ```
-Score = PnL×10 × リスク倍率（PnL>0 のとき, Sharpe と在庫上限張り付き率で 0.6〜2.5）
+Score = PnL×10 × リスク倍率（PnL>0 のとき, RAR と在庫上限張り付き率で 0.6〜2.5）
       + 取引ポイント（スプレッド×10×コンボ倍率, ALPHA 中 2倍）
       + アクションポイント（ニアミス・破壊・ゲート・距離）
 ```
 
-リスクグレード S〜D は Sharpe・リターン/最大ドローダウン・上限張り付き率から算出します（`src/sim/scoring.ts`）。
+リスクグレード S〜D は RAR・リターン/最大ドローダウン・上限張り付き率から算出します（`src/sim/scoring.ts`）。ALPHA 中の SMASH 得点は1回の発動につき最初の5回まで（稼ぎ防止）。
 
 ### LEARNING MODE
 
@@ -158,14 +207,17 @@ Score = PnL×10 × リスク倍率（PnL>0 のとき, Sharpe と在庫上限張�
 - 暴落開始時の在庫と暴落中の損益
 - 情報トレーダーとの約定比率（終了後に開示）
 - 転倒によるクォート停止で逃した約定、ALPHA DRIVE のリベート
-- **QUANT LAB 比較**：同じシード・同じ時間でボット 4 種を走らせた結果とあなたの比較
+- **タイムライン（この瞬間どうすべきだったか）**：損失が膨らんだ場面・最も稼いだ場面・暴落開始を自動抽出し、その時に**見えていた情報**（レジーム、FLOW、モメンタム、在庫、レーン、ニュース）と、**同じ市場で判断だけを変えて再シミュレーションした結果**（他のレーンで3秒、その瞬間にヘッジ）を金額で比較（`src/sim/moments.ts`）
+- フロー読み（一方向フロー・公表済みフロー・BLOCK 注文）の成績
+- **QUANT LAB 比較**：同じシード・同じ時間でボット 5 種を走らせた結果とあなたの比較（金融戦略のみ）
 
 ---
 
 ## QUANT LAB（拡張設計）
 
 - `Strategy` インターフェース（`decide(observation) → action`）で戦略を差し替え可能（`src/sim/strategies.ts`）
-- 実装済み：`RandomStrategy` / `FixedSpreadStrategy`（+ 在庫閾値ヘッジ）/ `InventoryAwareStrategy`
+- 実装済み：`RandomStrategy` / `FixedSpreadStrategy`（+ 在庫閾値ヘッジ）/ `InventoryAwareStrategy`（REGIME MEMORIZER）/ `SignalAwareStrategy`（SIGNAL READER）
+- **ゲーム内 QUANT LAB 画面**：任意シード・DAILY で比較。「金融戦略のみ」（障害物・時間制限なし）と「フルゲーム」（ボットも同じコースを自動操縦で走り、衝突・ゲート・制限時間の制約を受ける。`src/game/fullbot.ts`）を明示して切り替え。あなたの記録は端末内の自己ベスト（プレイ時間はボットと異なる旨を表示）
 - `runEpisode(seed, strategy)`、`replay(seed, actions)`、`benchmarkStrategies()`
 - CLI：`npm run lab -- <seeds> <seconds>`
 - 観測・行動は数値のみの単純な構造なので、Python（Gymnasium 等）への移植や強化学習エージェントの接続が容易です。テープ生成 → エンジンの `step(action)` → `observe()` がそのまま環境の `reset/step` に対応します。
@@ -178,9 +230,9 @@ Vite 7 / React 19 / TypeScript / Three.js / React Three Fiber / Drei / @react-th
 
 ```
 src/
-  sim/      市場シミュレーター（DOM非依存）: rng, config, tape, engine, scoring, strategies, analysis (+ tests)
-  game/     アクション層とアプリ状態: session(走行・障害物・ゲート・ALPHA), store(Zustand), audio(WebAudio合成), input, autopilot (+ tests)
-  scene/    3D描画 (R3F): 道路, 都市, 看板, ティッカー, 空の価格チャート, プレイヤー, 注文オーブ, 障害物, ゲート, パーティクル, カメラ
+  sim/      市場シミュレーター（DOM非依存）: rng, config, tape(v1/v2), engine, signals, scoring, strategies, analysis, moments (+ tests)
+  game/     アクション層とアプリ状態: session(走行・ゲート・ALPHA), spawner(パターン＋到達可能性保証), track(カーブ/起伏), coach(チュートリアル/TIPS), ghost(ゴースト/履歴/デイリー), fullbot, store(Zustand), audio(WebAudio合成), input, autopilot (+ tests)
+  scene/    3D描画 (R3F): bend(曲がる世界), 道路, 都市, 地区装飾とランドマーク, 看板, ティッカー, 空の価格チャート, プレイヤー, 注文オーブ, BLOCK, 障害物, ランプ/ブースト, ゴースト, ゲート, パーティクル, カメラ, 画質ティア
   ui/       HUD, タイトル, リザルト, 学習レポート, チャート(SVG)
 scripts/    quantlab.ts（戦略比較）, balance.ts（難易度チェック）
 tests/      Playwright E2E
@@ -188,18 +240,18 @@ tests/      Playwright E2E
 
 - アセットファイルなし：テクスチャはすべて Canvas で生成、効果音・BGM は WebAudio でリアルタイム合成（オリジナル）。
 - 固定タイムステップ（60Hz アクション / 20Hz 市場）でフレームレートに依存しない決定的シミュレーション。
-- 軽量化：インスタンシング、オブジェクトプール、`PerformanceMonitor` による自動解像度調整、LOW 画質（ポストエフェクト無効）、モバイル既定 LOW。
+- 軽量化：インスタンシング、共有ジオメトリのオブジェクトプール、画質ティア（HIGH: Bloom+色収差+ビネット / MEDIUM: Bloomのみ・解像度1.25 / LOW: ポストなし・都市55%）と `PerformanceMonitor` による AUTO 切替。シミュレーションの CPU コストは 1フレーム約13µs（`scripts/dev/bench.ts`）。
 
 ## 開発
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # Vitest（金融ロジック・PnL整合性・決定性・アクション層）
+npm test           # Vitest（金融ロジック・PnL整合性・決定性・v2モデル・反実仮想・スポナー公平性・アクション層）
 npm run build      # 型チェック + 本番ビルド → dist/
 npm run e2e        # Playwright（初回は npx playwright install chromium が必要な場合あり）
 npm run lab        # QUANT LAB 戦略比較
-npm run balance    # 自動操縦による難易度チェック
+npm run balance    # 自動操縦による難易度チェック（車両別）
 ```
 
 ## Cloudflare Pages への公開
@@ -211,6 +263,7 @@ npm run balance    # 自動操縦による難易度チェック
 2. このリポジトリを選択
 3. Framework preset: `None`（または Vite）／ Build command: `npm run build` ／ Build output directory: `dist`
 4. 環境変数 `NODE_VERSION=22` を設定して Save and Deploy
+5. PR ごとのプレビュー：Git 連携した Pages プロジェクトでは、`main` 以外のブランチへの push ごとに `https://<branch>.<project>.pages.dev` のプレビュー URL が自動生成されます（Settings → Builds & deployments → Preview deployments を有効に）
 
 **CLI から**
 ```bash
@@ -222,10 +275,10 @@ npx wrangler pages deploy dist --project-name quant-rush
 
 ## 今後の改善候補
 
-- 実機スマートフォンでのフレームレート計測と描画負荷の追加調整
-- リプレイ再生（入力ログは記録済み：`GameSession.inputLog` / `engine.actions`）とゴースト走行
+- 実機（スマホ・GPU）での FPS 実測と、それに基づく画質プリセットの調整
+- 入力ログ（`GameSession.inputLog`）からの完全リプレイ再生（現状のゴーストは位置トレースのみ）
 - QUANT LAB の UI 化（ブラウザ上でボット同士・自分との対戦、パラメータ調整）
 - Python 版環境（Gymnasium ラッパー）と強化学習エージェントの学習・比較
 - 在庫に応じたクォートの非対称化（スキュー）操作の追加
-- デイリーシード・ランキング（静的サイトのまま実現するなら共有 URL 方式）
+- 共有 URL によるシード・スコアの共有（サーバーなしで可能な範囲）
 - 地区ごとの固有ランドマーク・BGM バリエーション

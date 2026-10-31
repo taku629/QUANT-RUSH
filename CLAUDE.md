@@ -15,6 +15,10 @@
   - `engine.ts` is the only place money moves: `cash` and `inventory` are the single source of truth.
     `PnL = cash + inventory*mid - initialEquity`. Attribution fields are explanatory only — never add them to PnL.
   - `observe()` must not leak future data (`informed`, `willingness`, future mids). Tests enforce this.
+  - `tape.ts` v2 (`generateTapeV2`): regimes × hidden flow episodes × block orders × temporary impact. v1 kept for comparison (`model: 1`).
+  - `signals.ts` computes public tape signals only (tests scramble hidden/future data and require identical output).
+  - `moments.ts` counterfactual replays: same seed, one decision changed (possible because the tape never depends on actions).
+- `src/game/spawner.ts` — obstacle patterns + pacing; every row must keep a reachable free lane (tested independently). Do not bypass `accept()`.
 - `src/game/session.ts` — action layer (movement, obstacles, gates, ALPHA DRIVE) at fixed 60 Hz; calls `engine.step` every 3 frames.
   Couplings to finance must be explicit and consistent (lane → spread, knockdown → quotes offline, ALPHA → rebate booked as its own line).
 - `src/game/store.ts` — Zustand UI state + `dispatchEvents` (sim events → audio / fx / popups). Runtime objects live in `runtime`, not in React state.
@@ -25,5 +29,8 @@
 - Tunables: market params in `src/sim/config.ts`, game rules in `GAME_RULES` (session.ts), content in `src/game/content.ts`.
 - After changing market params run `npm run lab` and keep the "best lane differs by regime" property (also a unit test).
 - After changing obstacle/gate params run `npm run balance` (target avg run ≈ 60–90 s).
+- `src/scene/bend.ts` bends every world material in view space; long geometry must be subdivided along z or it skews.
+- Quality tiers in `src/scene/quality.ts`; respect `settings.reduceMotion` for shake/flash/aberration.
+- Never present local-only records (seed history, ghosts, daily bests) as a global ranking.
 - `window.__QUANT_RUSH__` exposes `{ runtime, useGame, autopilot }` for E2E tests.
 - No external assets: textures are canvas-generated, audio is WebAudio-synthesized.
