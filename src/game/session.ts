@@ -383,7 +383,7 @@ export class GameSession {
 
   private updateObstacles(dt: number) {
     const regime = this.engine.regime;
-    const baseGap = { CALM: 46, TRENDING: 38, VOLATILE: 31, CRASH: 27 }[regime];
+    const baseGap = { CALM: 52, TRENDING: 43, VOLATILE: 36, CRASH: 31 }[regime];
     const gap = Math.max(18, baseGap * (1 - Math.min(this.district, 4) * 0.05 - this.lap * 0.1));
     while (this.nextObstacleZ < this.z + 230) {
       const g = this.nextGate;
@@ -467,6 +467,7 @@ export class GameSession {
       this.actionPoints += 1000 * (1 + this.lap * 0.5);
       this.addCombo(3);
       this.addGauge(20);
+      this.stability = Math.min(this.vehicle.stability, this.stability + 1); // repair on a clean settlement
     } else this.gatesFailed++;
     this.emit({ type: 'gate', passed: ok, bonus, district: g.district, final: g.final, inventory: inv });
     if (g.final) {

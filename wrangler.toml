@@ -1,0 +1,4 @@
+# Cloudflare Pages (static). Deploy with: npx wrangler pages deploy dist --project-name quant-rush
+name = "quant-rush"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-10-01"

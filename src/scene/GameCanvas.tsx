@@ -54,7 +54,7 @@ function Post({ quality }: { quality: 'high' | 'low' }) {
   const ca = useRef<{ offset: THREE.Vector2 } | null>(null);
   useFrame(() => {
     if (ca.current) {
-      const k = 0.0005 + env.danger * 0.0025 + fx.shake * 0.006;
+      const k = 0.0004 + env.danger * 0.0016 + fx.shake * 0.005;
       ca.current.offset.set(k, k);
     }
   });
