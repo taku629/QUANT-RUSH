@@ -20,7 +20,7 @@ const makers: (() => Strategy)[] = [
 ];
 
 console.log(`QUANT LAB — model v${model} — ${nSeeds} seeds × ${seconds}s`);
-console.log('strategy'.padEnd(28), 'meanPnL', ' stdPnL', ' sharpe', '  maxDD', ' fills', ' spread', ' invPnL', ' hedge$');
+console.log('strategy'.padEnd(28), 'meanPnL', ' stdPnL', ' rar', '  maxDD', ' fills', ' spread', ' invPnL', ' hedge$');
 for (const mk of makers) {
   const rows: ReturnType<typeof runEpisode>['stats'][] = [];
   for (let s = 1; s <= nSeeds; s++) rows.push(runEpisode(generateTape(s * 7919, cfg), mk(), seconds).stats);
@@ -29,7 +29,7 @@ for (const mk of makers) {
   const sd = Math.sqrt(avg((r) => (r.pnl - m) ** 2));
   console.log(
     mk().name.padEnd(28),
-    m.toFixed(0).padStart(7), sd.toFixed(0).padStart(7), avg((r) => r.sharpe).toFixed(2).padStart(7),
+    m.toFixed(0).padStart(7), sd.toFixed(0).padStart(7), avg((r) => r.rar).toFixed(2).padStart(7),
     avg((r) => r.maxDrawdown).toFixed(0).padStart(7), avg((r) => r.fills).toFixed(0).padStart(6),
     avg((r) => r.spreadPnL).toFixed(0).padStart(7), avg((r) => r.inventoryPnL).toFixed(0).padStart(7), avg((r) => r.hedgeCost).toFixed(0).padStart(7),
   );

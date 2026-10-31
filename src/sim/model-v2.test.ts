@@ -104,7 +104,7 @@ describe('v2 market model', () => {
   it('reading the tape beats memorizing the regime; no fixed lane dominates', () => {
     const stat = (mk: () => { decide: SignalAwareStrategy['decide'] } & { name: string; description: string }) => {
       const r = tapes.map((t) => runEpisode(t, mk(), 90).stats);
-      return { pnl: avg(r.map((x) => x.pnl)), rar: avg(r.map((x) => x.sharpe)) };
+      return { pnl: avg(r.map((x) => x.pnl)), rar: avg(r.map((x) => x.rar)) };
     };
     const reader = stat(() => new SignalAwareStrategy());
     const regime = stat(() => new InventoryAwareStrategy());
@@ -124,5 +124,25 @@ describe('v2 market model', () => {
     const minGap = e.hedges.slice(1).reduce((m, h, i) => Math.min(m, h.tick - e.hedges[i].tick), Infinity);
     expect(minGap).toBeGreaterThanOrEqual(DEFAULT_CONFIG.hedgeCooldown / DEFAULT_CONFIG.dt);
     expect(LANES).toHaveLength(3);
+  });
+});
+
+import { counterfactualPnL, findKeyMoments, timelineInventory } from './moments';
+describe('counterfactual timeline', () => {
+  it('an unpatched counterfactual reproduces the real PnL exactly', () => {
+    const e = runEpisode(tapes[5], new SignalAwareStrategy(), 60).engine;
+    const at = e.actions.length;
+    expect(counterfactualPnL(e.tape, e.actions, 0, 0, (a) => a, at)).toBe(e.pnl);
+    expect(timelineInventory(e, e.tick)).toBe(e.inventory);
+  });
+  it('key moments use only what was observable and quantify alternatives', () => {
+    const e = runEpisode(tapes[2], new FixedSpreadStrategy(0), 90).engine;
+    const ms = findKeyMoments(e);
+    expect(ms.length).toBeGreaterThan(0);
+    for (const m of ms) {
+      expect(m.alternatives.length).toBeGreaterThan(0);
+      expect(m.tick).toBeLessThan(e.tick);
+      expect(m.context).not.toHaveProperty('episode');
+    }
   });
 });

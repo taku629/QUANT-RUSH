@@ -12,7 +12,7 @@ export function Learning() {
   if (!r || !r.review) return null;
   const rv = r.review;
   const me = r.risk.pnl;
-  const all = [...rv.benchmarks.map((b) => ({ name: b.name, pnl: b.pnl, sharpe: b.sharpe, me: false })), { name: 'YOU', pnl: me, sharpe: r.risk.sharpe, me: true }].sort((a, b) => b.pnl - a.pnl);
+  const all = [...rv.benchmarks.map((b) => ({ name: b.name, pnl: b.pnl, rar: b.rar, me: false })), { name: 'YOU', pnl: me, rar: r.risk.rar, me: true }].sort((a, b) => b.pnl - a.pnl);
   const maxAbs = Math.max(1, ...all.map((a) => Math.abs(a.pnl)));
   return (
     <div className="learning" data-testid="learning-report">
@@ -75,7 +75,7 @@ export function Learning() {
                   <div className="fill" style={{ width: `${(Math.abs(b.pnl) / maxAbs) * 50}%`, [b.pnl >= 0 ? 'left' : 'right']: '50%', background: b.me ? '#ffd23d' : b.pnl >= 0 ? '#3dff8b' : '#ff3d6e' }} />
                 </div>
                 <span className={`v ${b.pnl >= 0 ? 'up' : 'down'}`}>{b.pnl >= 0 ? '+' : '−'}${Math.abs(b.pnl).toFixed(0)}</span>
-                <span className="s">SR {b.sharpe.toFixed(2)}</span>
+                <span className="s">RAR {b.rar.toFixed(2)}</span>
               </div>
             ))}
           </div>

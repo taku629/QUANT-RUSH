@@ -66,10 +66,10 @@ export function Results() {
           <h3>MARKET MAKING</h3>
           <div className={`big ${rk.pnl >= 0 ? 'up' : 'down'}`}>{rk.pnl >= 0 ? '+' : '−'}${Math.abs(rk.pnl).toFixed(2)}</div>
           <dl>
-            <dt>Sharpe (リスク調整後)</dt><dd>{rk.sharpe.toFixed(2)}</dd>
+            <dt title="RAR = PnL ÷ (1秒ごとのPnL変化の標準偏差 × √秒数)。ゲーム独自のリスク調整後リターン指標で、年率Sharpe Ratioとは異なります">RAR リスク調整後リターン ⓘ</dt><dd>{rk.rar.toFixed(2)}</dd>
             <dt>最大ドローダウン</dt><dd>−${rk.maxDrawdown.toFixed(0)}</dd>
             <dt>約定 / ヘッジ</dt><dd>{rk.fills} / {rk.hedges}</dd>
-            <dt>逆選択コスト</dt><dd>−${Math.abs(rk.adverseSelection).toFixed(0)}</dd>
+            <dt title="約定2秒後の値洗いがマイナスだった取引の合計。逆選択と偶然の値動きの両方を含みます">負のマークアウト合計 ⓘ</dt><dd>−${Math.abs(rk.adverseSelection).toFixed(0)}</dd>
             <dt>平均在庫</dt><dd>{rk.avgAbsInventory.toFixed(0)} 株</dd>
           </dl>
         </div>

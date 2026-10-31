@@ -29,6 +29,6 @@ for (const pen of [[0, 0, 0], [0.3, 0.15, 0], [0.5, 0.25, 0]] as [number, number
       for (const volWide of [0.05, 1]) {
         const r = tapes.map((t) => runEpisode(t, mk(pen, varLim, invFrac, volWide), 90).stats);
         const m = r.reduce((a, x) => a + x.pnl, 0) / r.length;
-        const sh = r.reduce((a, x) => a + x.sharpe, 0) / r.length;
+        const sh = r.reduce((a, x) => a + x.rar, 0) / r.length;
         console.log(JSON.stringify(pen), varLim, invFrac, volWide, m.toFixed(0), sh.toFixed(2));
       }

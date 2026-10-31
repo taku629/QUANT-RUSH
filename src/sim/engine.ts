@@ -23,7 +23,7 @@ export type Action = {
   hedge: boolean;
   /** false while the player is knocked down — our quotes are offline and nothing fills */
   quoting?: boolean;
-  /** maker-rebate incentive active (ALPHA DRIVE) */
+  /** liquidity-incentive program active (ALPHA DRIVE): maker rebate on fills + hedge exchange fee waived */
   rebate?: boolean;
 };
 
@@ -193,8 +193,8 @@ export class MarketMakerEngine {
   get done(): boolean {
     return this.ended || this.tick >= this.tape.totalTicks;
   }
-  hedgeCostPerShare(regime: RegimeId = this.regime): number {
-    return this.cfg.hedgeBaseCost + REGIME_PARAMS[regime].hedgeExtra;
+  hedgeCostPerShare(regime: RegimeId = this.regime, feeWaived = false): number {
+    return this.cfg.hedgeBaseCost + REGIME_PARAMS[regime].hedgeExtra - (feeWaived ? this.cfg.hedgeFee : 0);
   }
   comboMultiplier(combo = this.combo): number {
     return Math.min(3, 1 + Math.floor(combo / 5) * 0.25);
@@ -235,7 +235,7 @@ export class MarketMakerEngine {
       else if (t < this.hedgeReadyTick) ev.hedgeRejected = 'COOLDOWN';
       else {
         const q = -this.inventory;
-        const c = this.hedgeCostPerShare(regime);
+        const c = this.hedgeCostPerShare(regime, !!action.rebate);
         const price = q > 0 ? m + c : m - c;
         const rec: HedgeRecord = { tick: t, qty: q, price, mid: m, costPerShare: c, cost: Math.abs(q) * c, regime, inventoryBefore: this.inventory };
         this.cash -= q * price;

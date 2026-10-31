@@ -139,6 +139,16 @@ describe('fills & accounting', () => {
     expect(e.step({ lane: 0, hedge: true }).hedgeRejected).toBe('COOLDOWN');
   });
 
+  it('ALPHA (incentive program) waives only the exchange fee of a hedge, booked as hedge cost', () => {
+    const e = new MarketMakerEngine(flatTape([{ side: 'SELL', qty: 300 }]));
+    e.step(idle(0));
+    e.step(idle(0));
+    const ev = e.step({ lane: 0, hedge: true, rebate: true });
+    expect(ev.hedge!.costPerShare).toBeCloseTo(DEFAULT_CONFIG.hedgeBaseCost - DEFAULT_CONFIG.hedgeFee, 10);
+    expect(e.hedgeCost).toBeCloseTo(300 * (DEFAULT_CONFIG.hedgeBaseCost - DEFAULT_CONFIG.hedgeFee), 10);
+    expect(e.spreadPnL + e.rebatePnL - e.hedgeCost + e.inventoryPnL).toBeCloseTo(e.pnl, 9);
+  });
+
   it('hedge when flat is rejected and costs nothing', () => {
     const e = new MarketMakerEngine(flatTape([]));
     const ev = e.step({ lane: 1, hedge: true });

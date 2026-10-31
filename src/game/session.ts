@@ -136,6 +136,7 @@ export class GameSession {
   alphaCount = 0;
   nearMisses = 0;
   smashes = 0;
+  smashesThisAlpha = 0;
   collisions = 0;
   offlineTime = 0;
   tradingPoints = 0;
@@ -241,6 +242,7 @@ export class GameSession {
     if (input.alpha && this.alphaReady) {
       this.alpha = GAME_RULES.alphaDuration;
       this.gauge = 0;
+      this.smashesThisAlpha = 0;
       this.alphaCount++;
       this.emit({ type: 'alpha', on: true });
     }
@@ -413,7 +415,9 @@ export class GameSession {
           if (this.alpha > 0) {
             o.alive = false;
             this.smashes++;
-            const pts = 250 * this.comboMultiplier;
+            this.smashesThisAlpha++;
+            // anti-farming: only the first few smashes of each ALPHA DRIVE score
+            const pts = this.smashesThisAlpha <= 5 ? 250 * this.comboMultiplier : 0;
             this.actionPoints += pts;
             this.addCombo(1);
             this.emit({ type: 'smash', kind: o.kind, x: o.x, z: o.z, points: Math.round(pts) });

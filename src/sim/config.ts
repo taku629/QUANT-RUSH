@@ -62,6 +62,8 @@ export type SimConfig = {
   /** horizon informed traders know about, also used for markouts (seconds) */
   infoHorizon: number;
   hedgeBaseCost: number;
+  /** exchange fee per share included in the hedge cost; waived during ALPHA DRIVE (maker incentive program) */
+  hedgeFee: number;
   hedgeCooldown: number;
   /** probability the first act (≈35–60s) contains a crash */
   crashChance: number;
@@ -84,6 +86,7 @@ export const DEFAULT_CONFIG: SimConfig = {
   orderLead: 1.6,
   infoHorizon: 2,
   hedgeBaseCost: 0.03,
+  hedgeFee: 0.01,
   hedgeCooldown: 3,
   crashChance: 0.85,
   stopLoss: -3000,

@@ -6,6 +6,8 @@
 import { LANES, REGIMES, type LaneId, type RegimeId } from './config';
 import type { MarketMakerEngine } from './engine';
 import { benchmarkStrategies, runEpisode } from './strategies';
+import { computeSignals } from './signals';
+import { findKeyMoments, type KeyMoment } from './moments';
 import { riskStats } from './scoring';
 
 export type Insight = { tone: 'good' | 'warn' | 'bad' | 'info'; title: string; body: string; concept: string };
@@ -20,13 +22,14 @@ export type RegimeRow = {
   inventoryPnL: number;
 };
 
-export type Benchmark = { name: string; description: string; pnl: number; sharpe: number; maxDrawdown: number; fills: number };
+export type Benchmark = { name: string; description: string; pnl: number; rar: number; maxDrawdown: number; fills: number };
 
 export type Review = {
   attribution: { spread: number; rebate: number; hedgeCost: number; inventory: number; total: number };
   regimes: RegimeRow[];
   insights: Insight[];
   benchmarks: Benchmark[];
+  moments: KeyMoment[];
 };
 
 const usd = (v: number) => `${v < 0 ? '−' : '+'}$${Math.abs(v).toFixed(0)}`;
@@ -185,8 +188,49 @@ export function buildReview(e: MarketMakerEngine, action?: ActionStats, withBenc
       tone: 'info',
       concept: 'Adverse Selection',
       title: `約定相手の ${pct(informed.length / Math.max(1, e.fills.length))} は情報トレーダーでした`,
-      body: `${informed.length} 件の約定は、この先2秒の値動きを知っている相手でした（プレイ中は非表示）。これらのマークアウト合計は ${usd(loss)}。緊急度リング(輪の数)の多い注文ほど情報トレーダーの割合が高まります。`,
+      body: `${informed.length} 件の約定は、この先2秒の値動きを知っている相手でした（プレイ中は非表示）。これらのマークアウト合計は ${usd(loss)}。情報トレーダーはリングの数では見分けられません。手掛かりは「注文が一方向に偏る」「その方向に価格が動き始める」ことです。`,
     });
+  }
+
+  // 6b) reading the tape (v2): one-sided flow, announced sweeps, block orders
+  if (e.tape.episodes.length) {
+    const byRead: Record<string, { n: number; mk: number; agg: number }> = {};
+    for (const f of e.fills) {
+      const r = computeSignals(e.tape, f.tick).read;
+      const b = (byRead[r] ??= { n: 0, mk: 0, agg: 0 });
+      b.n++;
+      b.mk += f.markout ?? 0;
+      if (f.lane === 0) b.agg++;
+    }
+    const one = byRead.ONE_SIDED;
+    if (one && one.n >= 3) {
+      insights.push({
+        tone: one.mk < 0 ? 'bad' : 'good',
+        concept: 'Order Flow Imbalance',
+        title: one.mk < 0 ? '一方向の注文フローで損をしました' : '一方向の注文フローを上手く捌きました',
+        body: `FLOW 表示が「一方向」だった時に ${one.n} 回約定（うち AGGRESSIVE ${one.agg} 回）、マークアウト合計 ${usd(one.mk)}。注文が片側に偏り、その方向に価格が動き始めたら、情報を持った相手がいる可能性が高まります。スプレッドを広げるか、在庫をヘッジしましょう。`,
+      });
+    }
+    const ann = byRead.ANNOUNCED;
+    if (ann && ann.n >= 2) {
+      insights.push({
+        tone: ann.mk >= 0 ? 'good' : 'info',
+        concept: 'Liquidity Provision',
+        title: '公表済みの大口フローに流動性を供給しました',
+        body: `リバランス等の「理由が公表された」一方向フローで ${ann.n} 回約定、マークアウト合計 ${usd(ann.mk)}。強制的な売買は一時的に価格を押しますが、終わると戻りやすい。情報による偏りとの違いを見分けるのが腕の見せ所です。`,
+      });
+    }
+    const blocks = e.tape.orders.filter((o) => o.block !== undefined && o.arriveTick < e.tick);
+    if (blocks.length) {
+      const got = e.fills.filter((f) => e.tape.orders[f.orderId].block !== undefined);
+      const routeMiss = e.misses.filter((m) => m.reason === 'ROUTE').length;
+      insights.push({
+        tone: got.length > 0 ? 'info' : 'warn',
+        concept: 'Block Trades',
+        title: `ブロック注文 ${blocks.length} 件中 ${got.length} 件を約定`,
+        body: `レーン上に現れる大口注文はそのレーンにいる時だけ取引できます（${routeMiss} 件はレーン違いで見送り）。約定したブロックのマークアウト合計は ${usd(got.reduce((a, f) => a + (f.markout ?? 0), 0))}。大口は在庫を一気に偏らせるので、取ったらヘッジの準備を。`,
+      });
+    }
   }
 
   // 7) action layer coupling
@@ -213,7 +257,7 @@ export function buildReview(e: MarketMakerEngine, action?: ActionStats, withBenc
     const seconds = Math.max(5, e.time);
     for (const s of benchmarkStrategies()) {
       const r = runEpisode(e.tape, s, seconds);
-      benchmarks.push({ name: s.name, description: s.description, pnl: r.stats.pnl, sharpe: r.stats.sharpe, maxDrawdown: r.stats.maxDrawdown, fills: r.stats.fills });
+      benchmarks.push({ name: s.name, description: s.description, pnl: r.stats.pnl, rar: r.stats.rar, maxDrawdown: r.stats.maxDrawdown, fills: r.stats.fills });
     }
     const me = riskStats(e);
     const beat = benchmarks.filter((b) => me.pnl > b.pnl).length;
@@ -221,7 +265,7 @@ export function buildReview(e: MarketMakerEngine, action?: ActionStats, withBenc
       tone: beat >= 3 ? 'good' : beat >= 1 ? 'info' : 'warn',
       concept: 'Risk-adjusted Return',
       title: `同じ市場で ${benchmarks.length} 体のボット中 ${beat} 体に勝利`,
-      body: `同じシード・同じ時間(${seconds.toFixed(0)}秒)でボット戦略を走らせた比較です。あなたのPnLは ${usd(me.pnl)}、リスク調整後リターン(Sharpe) ${me.sharpe.toFixed(2)}。`,
+      body: `同じシード・同じ時間(${seconds.toFixed(0)}秒)でボット戦略を走らせた比較です。あなたのPnLは ${usd(me.pnl)}、RAR（ゲーム独自のリスク調整後リターン指標）${me.rar.toFixed(2)}。`,
     });
   }
 
@@ -233,6 +277,7 @@ export function buildReview(e: MarketMakerEngine, action?: ActionStats, withBenc
     regimes: rows,
     insights,
     benchmarks,
+    moments: findKeyMoments(e),
   };
 }
 
