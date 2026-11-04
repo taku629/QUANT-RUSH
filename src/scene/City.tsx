@@ -90,7 +90,8 @@ export function City({ density }: { density: number }) {
       const far = h3 > 0.7;
       const w = p.wMin + h1 * (p.wMax - p.wMin);
       const height = empty ? 0 : (p.hMin + h2 * h2 * (p.hMax - p.hMin)) * (far ? 1.35 : 1);
-      const len = p.depth * (0.75 + h3 * 0.5);
+      // never longer than the slot spacing: overlapping boxes would draw the street wall twice (overdraw)
+      const len = Math.min(SPACING * 1.02, p.depth * (0.75 + h3 * 0.5));
       const x = side * (11 + p.near + w / 2 + (far ? 16 + h3 * 34 : h3 * 4));
       const z = -(sl.wz - s.z);
       dummy.rotation.set(0, 0, 0);
