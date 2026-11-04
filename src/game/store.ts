@@ -480,7 +480,8 @@ export function dispatchEvents(events: FxEvent[]) {
       case 'district': {
         // visual only: district title card + a soft light sweep in the district colour
         const d = DISTRICTS[ev.district % DISTRICTS.length];
-        useGame.setState({ districtCard: { key: Date.now(), district: ev.district, lap: ev.lap } });
+        // shown after the RISK CHECK popup has had its moment (UI timing only — gate logic is untouched)
+        window.setTimeout(() => useGame.setState({ districtCard: { key: Date.now(), district: ev.district, lap: ev.lap } }), 1100);
         fx.flash = Math.max(fx.flash, 0.22);
         fx.flashColor = d.primary;
         break;
