@@ -146,10 +146,10 @@ export function GameCanvas({ onContextLost }: { onContextLost: () => void }) {
         <Lights />
         <Sky />
         <Road />
-        <City density={spec.city} />
+        <City density={spec.city} tier={tier} />
         <Districts density={spec.city} />
-        <Skyline />
-        <Sidewalks />
+        {tier !== 'low' && <Skyline />}
+        {tier !== 'low' && <Sidewalks />}
         <Gates />
         <Obstacles />
         <Pickups />

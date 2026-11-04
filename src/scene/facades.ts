@@ -152,10 +152,16 @@ function commercial(g: G, r: () => number) {
   g.fillRect(0, TH / 2, TW, 3);
 }
 
-let atlas: THREE.CanvasTexture | null = null;
+const atlases: Partial<Record<'mip' | 'fast', THREE.CanvasTexture>> = {};
 
-export function facadeAtlas(): THREE.CanvasTexture {
-  if (atlas) return atlas;
+/** fast = no mipmaps (cheapest sampling, for the LOW tier) */
+export function facadeAtlas(fast = false, anisotropy = 4): THREE.CanvasTexture {
+  const k = fast ? 'fast' : 'mip';
+  const cached = atlases[k];
+  if (cached) {
+    cached.anisotropy = fast ? 1 : anisotropy;
+    return cached;
+  }
   const c = document.createElement('canvas');
   c.width = TW * 5;
   c.height = TH;
@@ -170,18 +176,25 @@ export function facadeAtlas(): THREE.CanvasTexture {
     p(g, rnd(1000 + i));
     g.restore();
   });
-  atlas = new THREE.CanvasTexture(c);
+  const atlas = new THREE.CanvasTexture(c);
   atlas.colorSpace = THREE.SRGBColorSpace;
-  atlas.anisotropy = 4;
+  atlas.anisotropy = fast ? 1 : anisotropy;
+  if (fast) {
+    atlas.generateMipmaps = false;
+    atlas.minFilter = THREE.LinearFilter;
+  }
+  atlases[k] = atlas;
   return atlas;
 }
 
 /**
  * Building material: samples the atlas tile chosen by the per-instance `aStyle` attribute and repeats it
- * according to the instance's scale (window size constant). Uses textureGrad so tiling has no mip seams.
+ * according to the instance's scale (window size constant).
+ * HIGH/MEDIUM: mipmapped atlas + textureGrad (no seams, no shimmer). LOW (`fast`): no mipmaps, plain sampling —
+ * measured ~1.6× faster fill rate in software rendering.
  */
-export function makeFacadeMaterial(): THREE.MeshBasicMaterial {
-  const m = new THREE.MeshBasicMaterial({ map: facadeAtlas(), toneMapped: false });
+export function makeFacadeMaterial(fast = false, anisotropy = 4): THREE.MeshBasicMaterial {
+  const m = new THREE.MeshBasicMaterial({ map: facadeAtlas(fast, anisotropy), toneMapped: false });
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -215,12 +228,12 @@ export function makeFacadeMaterial(): THREE.MeshBasicMaterial {
         '#include <map_fragment>',
         `vec2 fTile = vec2(fract(vFacadeUv.x) * 0.98 + 0.01, fract(vFacadeUv.y));
         vec2 fUv = vec2((fTile.x + vStyle) / 5.0, fTile.y);
-        vec2 fdx = dFdx(vFacadeUv) * vec2(0.196, 1.0);
+        ${fast ? 'vec4 sampledDiffuseColor = texture2D(map, fUv);' : `vec2 fdx = dFdx(vFacadeUv) * vec2(0.196, 1.0);
         vec2 fdy = dFdy(vFacadeUv) * vec2(0.196, 1.0);
-        vec4 sampledDiffuseColor = textureGrad(map, fUv, fdx, fdy);
+        vec4 sampledDiffuseColor = textureGrad(map, fUv, fdx, fdy);`}
         diffuseColor *= sampledDiffuseColor;`,
       );
   };
-  m.customProgramCacheKey = () => 'facade-v1';
+  m.customProgramCacheKey = () => (fast ? 'facade-fast' : 'facade-grad');
   return m;
 }

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { DISTRICTS, REGIME_STYLE } from '../game/content';
 import { createTicker, signTexture } from './textures';
 import { makeFacadeMaterial } from './facades';
+import type { Tier } from './quality';
 import { LANDMARK_PLAZA, landmarkZ, sceneryFor, vhash } from './scenery';
 import { env } from './env';
 import { active, sessionChanged } from './active';
@@ -34,7 +35,7 @@ type Slot2 = Slot & { d: number; style: number };
  * cornices / setbacks / rooftop billboards) + spires. Each slot takes the look of the district at its world z,
  * so the skyline visibly changes as you cross into a new district.
  */
-export function City({ density }: { density: number }) {
+export function City({ density, tier }: { density: number; tier: Tier }) {
   const n = Math.round(N * density);
   const bodies = useRef<THREE.InstancedMesh>(null);
   const crowns = useRef<THREE.InstancedMesh>(null);
@@ -44,7 +45,7 @@ export function City({ density }: { density: number }) {
     g.setAttribute('aStyle', new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 1));
     return g;
   }, [n]);
-  const bodyMat = useMemo(() => makeFacadeMaterial(), []);
+  const bodyMat = useMemo(() => makeFacadeMaterial(tier === 'low', tier === 'high' ? 4 : 1), [tier]);
   const slots = useMemo<Slot2[]>(() => Array.from({ length: n * 2 }, (_, i) => ({ wz: Math.floor(i / 2) * SPACING - 20, seed: i, d: -1, style: -1 })), [n]);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const col = useMemo(() => new THREE.Color(), []);
@@ -159,7 +160,7 @@ export function City({ density }: { density: number }) {
 
   return (
     <group>
-      <instancedMesh key={`b${n}`} ref={bodies} args={[bodyGeo, bodyMat, n * 2]} frustumCulled={false} />
+      <instancedMesh key={`b${n}${tier}`} ref={bodies} args={[bodyGeo, bodyMat, n * 2]} frustumCulled={false} />
       <instancedMesh key={`r${n}`} ref={crowns} args={[undefined, undefined, n * 2]} frustumCulled={false}>
         <boxGeometry args={[1, 1, 1]} />
         <meshBasicMaterial toneMapped={false} />
