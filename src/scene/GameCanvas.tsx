@@ -1,4 +1,4 @@
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PerformanceMonitor } from '@react-three/drei';
 import { Bloom, ChromaticAberration, EffectComposer, Vignette } from '@react-three/postprocessing';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -83,11 +83,13 @@ function Post({ tier }: { tier: Tier }) {
 /** FPS sampler (always on, cheap) — feeds the optional on-screen counter */
 function FpsProbe() {
   const acc = useRef({ t: 0, n: 0 });
+  const gl = useThree((s) => s.gl);
   useFrame((_, dt) => {
     acc.current.t += dt;
     acc.current.n++;
     if (acc.current.t >= 0.5) {
-      useTier.setState({ fps: Math.round(acc.current.n / acc.current.t) });
+      // renderer stats of the previous frame (draw calls incl. post-processing passes)
+      useTier.setState({ fps: Math.round(acc.current.n / acc.current.t), calls: gl.info.render.calls, tris: gl.info.render.triangles });
       acc.current = { t: 0, n: 0 };
     }
   });

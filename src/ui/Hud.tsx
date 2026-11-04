@@ -296,8 +296,9 @@ function FpsCounter() {
   const fps = useTier((s) => s.fps);
   const tier = useTier((s) => s.tier);
   const q = useGame((s) => s.settings.quality);
+  const calls = useTier((s) => s.calls);
   if (!show) return null;
-  return <div className="fps">{fps} FPS · {q === 'auto' ? `AUTO:${tier}` : q}</div>;
+  return <div className="fps">{fps} FPS · {q === 'auto' ? `AUTO:${tier}` : q} · {calls} draws</div>;
 }
 
 function NewsBanner() {

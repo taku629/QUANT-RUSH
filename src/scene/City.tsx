@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { DISTRICTS, REGIME_STYLE } from '../game/content';
 import { createTicker, signTexture } from './textures';
 import { makeFacadeMaterial } from './facades';
-import { sceneryFor, vhash } from './scenery';
+import { LANDMARK_PLAZA, landmarkZ, sceneryFor, vhash } from './scenery';
 import { env } from './env';
 import { active, sessionChanged } from './active';
 import type { GameSession } from '../game/session';
@@ -59,6 +59,7 @@ export function City({ density }: { density: number }) {
     lastRegime.current = s.engine.regime;
     const crash = s.engine.regime === 'CRASH';
     const styleAttr = bodyGeo.getAttribute('aStyle') as THREE.InstancedBufferAttribute;
+    const lmZ = landmarkZ(s);
     let styleDirty = false;
     let colorDirty = false;
     slots.forEach((sl, i) => {
@@ -83,7 +84,9 @@ export function City({ density }: { density: number }) {
       const h1 = hash(sl.seed);
       const h2 = hash(sl.seed + 0.5);
       const h3 = hash(sl.seed + 0.9);
-      const empty = vhash(sl.seed * 1.37) < p.gaps;
+      // open plaza around the district landmark so its silhouette reads from far away
+      const plaza = lmZ !== null && dIdx === s.district && Math.abs(sl.wz - lmZ) < LANDMARK_PLAZA && h3 <= 0.7;
+      const empty = plaza || vhash(sl.seed * 1.37) < p.gaps;
       const far = h3 > 0.7;
       const w = p.wMin + h1 * (p.wMax - p.wMin);
       const height = empty ? 0 : (p.hMin + h2 * h2 * (p.hMax - p.hMin)) * (far ? 1.35 : 1);

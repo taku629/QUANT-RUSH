@@ -75,6 +75,16 @@ export const SCENERY: SceneryProfile[] = [
 
 export const sceneryFor = (district: number) => SCENERY[((district % 5) + 5) % 5];
 
+/** landmark world z: the middle of the current district (its obstacle-free breather section) — visual only */
+export function landmarkZ(s: { nextGate?: { z: number }; districtStartZ: number }): number | null {
+  const g = s.nextGate;
+  if (!g) return null;
+  return s.districtStartZ + (g.z - s.districtStartZ) * 0.505;
+}
+
+/** half-length of the open plaza kept around each landmark so its silhouette is not hidden by the street wall */
+export const LANDMARK_PLAZA = 42;
+
 /** deterministic visual hash (independent of every gameplay RNG stream) */
 export function vhash(n: number): number {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;

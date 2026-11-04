@@ -12,9 +12,11 @@ export const TIERS: Record<Tier, TierSpec> = {
 };
 
 /** effective tier (AUTO moves it with measured frame rate) */
-export const useTier = create<{ tier: Tier; fps: number; set: (t: Tier) => void }>((set) => ({
+export const useTier = create<{ tier: Tier; fps: number; calls: number; tris: number; set: (t: Tier) => void }>((set) => ({
   tier: isMobile() ? 'medium' : 'high',
   fps: 0,
+  calls: 0,
+  tris: 0,
   set: (tier) => set({ tier }),
 }));
 

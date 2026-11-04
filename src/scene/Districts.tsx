@@ -2,11 +2,10 @@ import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { DISTRICTS } from '../game/content';
-import type { GameSession } from '../game/session';
 import { active } from './active';
 import { districtAtZ } from './City';
 import { env } from './env';
-import { vhash } from './scenery';
+import { landmarkZ, vhash } from './scenery';
 
 /**
  * District street furniture + landmarks. Everything here is a background object:
@@ -48,7 +47,15 @@ function DecorInstances({ def, density }: { def: DecorDef; density: number }) {
   useFrame(() => {
     const s = active();
     if (!s || !ref.current) return;
+    // skip the draw call (and the matrix work) when this family's district is neither here nor next
+    const here = DISTRICTS[s.district % DISTRICTS.length].id;
+    const next = DISTRICTS[(s.district + 1) % DISTRICTS.length].id;
+    if (def.district !== here && def.district !== next) {
+      ref.current.visible = false;
+      return;
+    }
     const base = Math.floor(s.z / def.gap) * def.gap + (def.phase ?? 0);
+    let any = false;
     for (let k = 0; k < count; k++) {
       const wz = base + k * def.gap;
       const d = DISTRICTS[districtAtZ(s, wz) % DISTRICTS.length];
@@ -56,11 +63,13 @@ function DecorInstances({ def, density }: { def: DecorDef; density: number }) {
       dummy.scale.set(1, 1, 1);
       if (d.id !== def.district || wz < s.z - 20) dummy.scale.setScalar(0);
       else def.place(dummy, k, wz, env.time);
+      if (dummy.scale.x !== 0) any = true;
       dummy.position.z = -(wz - s.z);
       dummy.updateMatrix();
       ref.current.setMatrixAt(k, dummy.matrix);
     }
-    ref.current.instanceMatrix.needsUpdate = true;
+    ref.current.visible = any;
+    if (any) ref.current.instanceMatrix.needsUpdate = true;
     if (def.tint) def.tint(mat.color, env.time);
   });
   return <instancedMesh key={count} ref={ref} args={[def.geo, mat, count]} frustumCulled={false} />;
@@ -98,14 +107,17 @@ export function decorDefs(): DecorDef[] {
 
   // ── 六本木: light pillars, elevated interchange ramps, sweeping searchlights
   D.push({ district: 'roppongi', count: 20, gap: 22, color: '#b84dff', additive: true, geo: new THREE.BoxGeometry(0.5, 40, 0.5), place: (d, k) => d.position.set(side(k) * 14, 20, 0) });
-  D.push({ district: 'roppongi', count: 8, gap: 90, phase: 40, color: '#3a1a5a', geo: new THREE.TorusGeometry(40, 1.6, 6, 40, Math.PI * 0.55), place: (d, k) => { d.position.set(side(k) * 52, 6, 0); d.rotation.set(Math.PI / 2, 0, side(k) * 0.5); } });
-  D.push({ district: 'roppongi', count: 8, gap: 90, phase: 40, color: '#ff4dd2', geo: new THREE.TorusGeometry(40, 0.25, 4, 40, Math.PI * 0.55), place: (d, k) => { d.position.set(side(k) * 52, 7.8, 0); d.rotation.set(Math.PI / 2, 0, side(k) * 0.5); } });
+  // elevated interchange ramps far beyond the street wall (thin, lit edges — background only)
+  D.push({ district: 'roppongi', count: 8, gap: 90, phase: 40, color: '#5a3a7a', geo: new THREE.TorusGeometry(40, 0.8, 4, 40, Math.PI * 0.55), place: (d, k) => { d.position.set(side(k) * 66, 11, 0); d.rotation.set(Math.PI / 2, 0, side(k) * 0.5); } });
+  D.push({ district: 'roppongi', count: 8, gap: 90, phase: 40, color: '#ff4dd2', geo: new THREE.TorusGeometry(40, 0.22, 4, 40, Math.PI * 0.55), place: (d, k) => { d.position.set(side(k) * 66, 12, 0); d.rotation.set(Math.PI / 2, 0, side(k) * 0.5); } });
   D.push({ district: 'roppongi', count: 6, gap: 80, phase: 10, color: '#d8b8ff', additive: true, opacity: 0.12, geo: new THREE.ConeGeometry(5, 120, 12, 1, true), place: (d, k, _wz, t) => { d.position.set(side(k) * 40, 60, 0); d.rotation.set(Math.sin(t * 0.6 + k) * 0.5, 0, side(k) * (0.3 + Math.sin(t * 0.45 + k * 1.7) * 0.25) + Math.PI); } });
 
   // ── 渋谷: scramble crossing stripes, giant facade screens, street kiosks, hanging banners
   D.push({ district: 'shibuya', count: 40, gap: 9, color: '#5a6070', additive: true, geo: new THREE.PlaneGeometry(12.6, 1.4), place: (d, _k, wz) => { d.rotation.x = -Math.PI / 2; d.position.set(0, 0.04, 0); d.scale.set(Math.floor(wz / 90) % 2 === 0 ? 1 : 0, 1, 1); } });
   D.push({ district: 'shibuya', count: 16, gap: 30, color: '#a6ff00', geo: new THREE.PlaneGeometry(16, 9), place: (d, k) => { d.position.set(side(k) * 13.5, 13 + (k % 3) * 5, 0); d.rotation.y = -side(k) * 1.1; }, tint: (c, t) => c.setHSL((t * 0.08) % 1, 0.95, 0.55) });
-  D.push({ district: 'shibuya', count: 30, gap: 11, color: '#ff3d8b', geo: new THREE.BoxGeometry(1.4, 2.2, 3), place: (d, k) => d.position.set(side(k) * 8.4, 1.1, 0), tint: (c, t) => c.setHSL((0.92 + t * 0.05) % 1, 0.9, 0.6) });
+  // street kiosks: dark bodies with a thin lit sign band, set back from the road edge so they never read as obstacles
+  D.push({ district: 'shibuya', count: 30, gap: 11, color: '#1c1824', geo: new THREE.BoxGeometry(1.4, 2.2, 3), place: (d, k) => d.position.set(side(k) * 10.0, 1.1, 0) });
+  D.push({ district: 'shibuya', count: 30, gap: 11, color: '#ff3d8b', geo: new THREE.BoxGeometry(1.5, 0.35, 3.1), place: (d, k) => d.position.set(side(k) * 10.0, 2.35, 0), tint: (c, t) => c.setHSL((0.92 + t * 0.05) % 1, 0.9, 0.55) });
   D.push({ district: 'shibuya', count: 20, gap: 16, phase: 8, color: '#ffd23d', geo: new THREE.PlaneGeometry(1.2, 4), place: (d, k) => { d.position.set(side(k) * 9.2, 7, 0); d.rotation.y = Math.PI / 2; } });
   return D;
 }
@@ -163,11 +175,12 @@ export function buildLandmarks() {
   {
     const L = mk();
     for (const sx of [-1, 1]) {
-      L.add(new THREE.BoxGeometry(18, 200, 18), '#0e2244', [sx * 23, 100, 0]);
+      L.add(new THREE.BoxGeometry(18, 200, 18), '#1d3c78', [sx * 23, 100, 0]);
       L.add(new THREE.BoxGeometry(18, 200, 18), '#ffc23d', [sx * 23, 100, 0], [0, 0, 0], { lines: true });
       L.add(new THREE.BoxGeometry(12, 30, 12), '#163060', [sx * 23, 215, 0]);
       L.add(new THREE.CylinderGeometry(0.4, 0.4, 30, 6), '#ff3d3d', [sx * 23, 245, 0], [0, 0, 0], { name: 'beacon' });
-      for (let f = 0; f < 18; f++) L.add(new THREE.BoxGeometry(18.4, 0.5, 18.4), '#9fc4ff', [sx * 23, 10 + f * 10.5, 0]);
+      for (let f = 0; f < 18; f++) L.add(new THREE.BoxGeometry(18.4, 0.8, 18.4), '#cfe2ff', [sx * 23, 10 + f * 10.5, 0]);
+      L.add(new THREE.BoxGeometry(1.2, 200, 18.6), '#ffc23d', [sx * 23 - sx * 9.1, 100, 0]);
     }
     L.add(new THREE.BoxGeometry(30, 7, 9, 6, 1, 1), '#ffc23d', [0, 120, 0]);
     L.add(new THREE.BoxGeometry(30, 3, 9, 6, 1, 1), '#ffc23d', [0, 60, 0]);
@@ -205,23 +218,17 @@ export function buildLandmarks() {
   // 渋谷 — SCRAMBLE GATE: a giant LED bridge-screen over the crossing + cylinder tower
   {
     const L = mk();
-    L.add(new THREE.BoxGeometry(46, 14, 2, 8, 1, 1), '#a6ff00', [0, 22, 0], [0, 0, 0], { name: 'screen' });
-    L.add(new THREE.BoxGeometry(48, 1, 2.6, 8, 1, 1), '#ffffff', [0, 14.6, 0]);
-    L.add(new THREE.BoxGeometry(48, 1, 2.6, 8, 1, 1), '#ffffff', [0, 29.4, 0]);
-    for (const sx of [-1, 1]) L.add(new THREE.BoxGeometry(2.4, 30, 2.4), '#202028', [sx * 23.5, 15, 0]);
+    L.add(new THREE.BoxGeometry(62, 20, 2, 10, 1, 1), '#a6ff00', [0, 25, 0], [0, 0, 0], { name: 'screen' });
+    L.add(new THREE.BoxGeometry(64, 1.4, 2.8, 10, 1, 1), '#ffffff', [0, 14.4, 0]);
+    L.add(new THREE.BoxGeometry(64, 1.4, 2.8, 10, 1, 1), '#ffffff', [0, 35.6, 0]);
+    for (const sx of [-1, 1]) L.add(new THREE.BoxGeometry(3, 36, 3), '#ffffff', [sx * 31.5, 18, 0]);
+    for (let k = 0; k < 6; k++) L.add(new THREE.BoxGeometry(9, 2.2, 2.2), ['#ff3d8b', '#ffd23d', '#3dffcf', '#ff8a00', '#7a5cff', '#00d0ff'][k], [-26 + k * 10.4, 38.6, 0]);
     L.add(new THREE.CylinderGeometry(11, 11, 64, 28), '#26262e', [-38, 32, -20]);
     L.add(new THREE.CylinderGeometry(11.3, 11.3, 12, 28, 1, true), '#ff8a00', [-38, 52, -20], [0, 0, 0], { name: 'screen' });
     L.add(new THREE.BoxGeometry(18, 24, 2), '#00d0ff', [34, 30, -14], [0, -0.5, 0], { name: 'screen' });
     out.shibuya = L;
   }
   return out;
-}
-
-/** landmark world z: the middle of the district (its obstacle-free breather section) */
-export function landmarkZ(s: GameSession): number | null {
-  const g = s.nextGate;
-  if (!g) return null;
-  return s.districtStartZ + (g.z - s.districtStartZ) * 0.505;
 }
 
 function Landmarks() {
