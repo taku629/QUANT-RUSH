@@ -32,5 +32,10 @@
 - `src/scene/bend.ts` bends every world material in view space; long geometry must be subdivided along z or it skews.
 - Quality tiers in `src/scene/quality.ts`; respect `settings.reduceMotion` for shake/flash/aberration.
 - Never present local-only records (seed history, ghosts, daily bests) as a global ranking.
+- Visual changes must keep `src/game/golden.test.ts` green (gameplay fingerprint frozen on `v2.0.0-prototype`). Never regenerate
+  `tests/golden/gameplay-v2.json` to make a visual change pass — a diff there means gameplay changed.
+- Scenery is visual-only: per-district profiles in `src/scene/scenery.ts`, facades in `facades.ts`, decor/landmarks in `Districts.tsx`.
+  Keep landmarks out of the road corridor and decor off the lanes (`src/scene/scenery.test.ts`). Use `vhash`, never gameplay RNGs.
+- Preserved versions: `archive/v1` (= v1.0.0-prototype, ad253d1) and `archive/v2` (= v2.0.0-prototype, 9756d6c) must never change.
 - `window.__QUANT_RUSH__` exposes `{ runtime, useGame, autopilot }` for E2E tests.
 - No external assets: textures are canvas-generated, audio is WebAudio-synthesized.

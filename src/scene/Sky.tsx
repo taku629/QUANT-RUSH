@@ -68,7 +68,12 @@ export function Sky() {
     mat.uniforms.top.value.copy(env.skyTop);
     mat.uniforms.horizon.value.copy(env.skyHorizon);
     mat.uniforms.flash.value = fx.lightning * 0.9;
-    scene.fog && (scene.fog as THREE.Fog).color.copy(env.fog);
+    if (scene.fog) {
+      const f = scene.fog as THREE.Fog;
+      f.color.copy(env.fog);
+      f.near = env.fogNear;
+      f.far = env.fogFar;
+    }
     const s = active();
     if (!s) return;
     // lightning in volatile/crash markets

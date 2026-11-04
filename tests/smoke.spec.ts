@@ -136,3 +136,25 @@ test('daily challenge uses the JST date seed and quant lab labels finance-only c
   expect(mode).toBe('daily');
   expect(seed).toBeGreaterThanOrEqual(100000);
 });
+
+test('crossing a settlement gate shows the district title card (visual only)', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('quantrush.settings.v1', JSON.stringify({ tutorialDone: true })));
+  await page.goto('/');
+  await page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().start(424242));
+  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: 30_000 }).toBe('playing');
+  // fast-forward (test-only) to just before the first gate, then let the real game loop cross it
+  await page.evaluate(() => {
+    const { runtime, autopilot } = (window as any).__QUANT_RUSH__;
+    const s = runtime.session;
+    s.timeLeft = 999;
+    s.stability = 99;
+    for (let i = 0; i < 60 * 60 && !(s.nextGate && s.nextGate.z - s.z < 20); i++) {
+      s.update(autopilot(s, i));
+      s.drainEvents();
+    }
+  });
+  await expect(page.getByTestId('district-card')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('district-card')).toContainText('大手町');
+  // the card never captures input
+  expect(await page.getByTestId('district-card').evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none');
+});

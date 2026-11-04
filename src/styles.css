@@ -387,3 +387,17 @@ button { font-family: var(--display); cursor: pointer; color: inherit; touch-act
   .tape-read small { display: none; }
   .hud-lanes { display: none; }
 }
+
+/* ---------- scenery upgrade: district entry card + HUD legibility over brighter scenery ---------- */
+.district-card { position: absolute; left: 50%; top: 17%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; pointer-events: none; text-align: center; animation: dcIn 2.6s ease forwards; }
+.district-card::before { content: ''; position: absolute; left: -40%; right: -40%; top: 18%; bottom: 18%; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--dc) 22%, rgba(4,2,16,0.55)) 20%, color-mix(in srgb, var(--dc) 22%, rgba(4,2,16,0.55)) 80%, transparent); z-index: -1; }
+.dc-num { font-family: var(--display); font-size: 11px; letter-spacing: 0.4em; color: var(--dc); }
+.dc-jp { font-family: var(--jp); font-weight: 900; font-size: clamp(34px, 6vw, 64px); line-height: 1.1; color: #fff; letter-spacing: 0.12em; text-shadow: 0 0 22px var(--dc), 0 2px 0 rgba(0,0,0,0.6); }
+.dc-en { font-family: var(--display); font-weight: 800; font-size: clamp(14px, 2.2vw, 22px); letter-spacing: 0.45em; color: var(--dc); }
+.dc-tag { font-family: var(--display); font-size: 10px; letter-spacing: 0.35em; color: #dfe4ff; opacity: 0.85; }
+@keyframes dcIn { 0% { opacity: 0; transform: translate(-50%, -10px) scale(1.06); letter-spacing: 0.6em; } 12% { opacity: 1; transform: translate(-50%, 0) scale(1); } 78% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -6px); } }
+@media (prefers-reduced-motion: reduce) { .district-card { animation-duration: 2.6s; animation-timing-function: steps(1, end); } }
+/* stronger outlines so numbers stay readable over brighter facades and screens */
+.pnl-val, .time, .speed b, .hud-inv .lbl b { -webkit-text-stroke: 0.6px rgba(0,0,0,0.55); }
+.hud-pnl, .hud-right { text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+@media (max-width: 760px) { .district-card { top: 24%; } }
