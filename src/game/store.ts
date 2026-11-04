@@ -111,6 +111,8 @@ type Store = {
   mode: Mode;
   tutorial: { title: string; body: string; step: number; total: number } | null;
   tip: (Tip & { key: number }) | null;
+  /** visual-only district entry card */
+  districtCard: { key: number; district: number; lap: number } | null;
   skipTutorial: () => void;
   openLab: () => void;
   setSettings: (p: Partial<Settings>) => void;
@@ -144,6 +146,7 @@ export const useGame = create<Store>((set, get) => ({
   mode: 'arcade',
   tutorial: null,
   tip: null,
+  districtCard: null,
 
   skipTutorial() {
     runtime.tutorial?.skip();
@@ -475,8 +478,11 @@ export function dispatchEvents(events: FxEvent[]) {
         break;
       }
       case 'district': {
+        // visual only: district title card + a soft light sweep in the district colour
         const d = DISTRICTS[ev.district % DISTRICTS.length];
-        window.setTimeout(() => useGame.getState().popup({ text: `${d.jp} ${d.name}`, sub: ev.lap > 0 ? `OVERTIME LAP ${ev.lap} · ${d.tagline}` : d.tagline, color: d.primary, size: 'lg', y: 20 }), 1300);
+        useGame.setState({ districtCard: { key: Date.now(), district: ev.district, lap: ev.lap } });
+        fx.flash = Math.max(fx.flash, 0.22);
+        fx.flashColor = d.primary;
         break;
       }
       case 'regime':

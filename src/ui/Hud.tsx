@@ -34,6 +34,7 @@ export function Hud() {
       <Popups />
       <TutorialCard />
       <TipToast />
+      <DistrictCard />
       <FpsCounter />
       {phase === 'ending' && <div className="end-banner">SESSION CLOSED</div>}
       {hud.alpha > 0 && <div className="alpha-frame" />}
@@ -245,6 +246,29 @@ function TutorialCard() {
       <b>{tut.title}</b>
       <p>{tut.body}</p>
       <button onClick={skip} data-testid="skip-tutorial">SKIP</button>
+    </div>
+  );
+}
+
+/** District entry title (non-blocking: top of screen, fades out, no input capture). */
+function DistrictCard() {
+  const card = useGame((s) => s.districtCard);
+  const [shown, setShown] = useState(card);
+  useEffect(() => {
+    if (!card) return;
+    setShown(card);
+    const t = window.setTimeout(() => setShown(null), 2600);
+    return () => window.clearTimeout(t);
+  }, [card]);
+  if (!shown) return null;
+  const d = DISTRICTS[shown.district % DISTRICTS.length];
+  const n = (shown.district % DISTRICTS.length) + 1;
+  return (
+    <div className="district-card" key={shown.key} style={{ ['--dc' as string]: d.primary }} data-testid="district-card">
+      <span className="dc-num">{shown.lap > 0 ? `OVERTIME ${shown.lap} · ` : ''}DISTRICT {n}/5</span>
+      <b className="dc-jp">{d.jp}</b>
+      <span className="dc-en">{d.name}</span>
+      <span className="dc-tag">{d.tagline}</span>
     </div>
   );
 }

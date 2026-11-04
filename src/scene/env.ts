@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { RegimeId } from '../sim/config';
 import { DISTRICTS } from '../game/content';
+import { sceneryFor } from './scenery';
 
 export const env = {
   primary: new THREE.Color('#00f0ff'),
@@ -10,6 +11,10 @@ export const env = {
   skyTop: new THREE.Color('#02010a'),
   skyHorizon: new THREE.Color('#3a0d5c'),
   regimeColor: new THREE.Color('#3dd6ff'),
+  /** district key-light tint and fog distances (visual only) */
+  key: new THREE.Color('#ffffff'),
+  fogNear: 60,
+  fogFar: 420,
   danger: 0,
   time: 0,
 };
@@ -20,6 +25,9 @@ const tmp = {
   f: new THREE.Color(),
   h: new THREE.Color(),
   r: new THREE.Color(),
+  t: new THREE.Color(),
+  k: new THREE.Color(),
+  rh: new THREE.Color(),
 };
 
 const REGIME_TINT: Record<RegimeId, { horizon: string; color: string; danger: number }> = {
@@ -35,8 +43,17 @@ export function updateEnv(district: number, regime: RegimeId, dt: number) {
   const k = 1 - Math.exp(-dt * 1.6);
   tmp.p.set(regime === 'CRASH' ? '#ff2a4d' : d.primary);
   tmp.s.set(regime === 'CRASH' ? '#ff6a00' : d.secondary);
-  tmp.f.set(d.fog).lerp(new THREE.Color(r.horizon), regime === 'CALM' ? 0.15 : 0.45);
-  tmp.h.set(r.horizon);
+  const sc = sceneryFor(district);
+  const regimeMix = regime === 'CALM' ? 0.12 : regime === 'CRASH' ? 0.6 : 0.35;
+  tmp.rh.set(r.horizon);
+  tmp.f.set(sc.fog).lerp(tmp.rh, regimeMix);
+  tmp.h.set(sc.skyHorizon).lerp(tmp.rh, regimeMix);
+  tmp.t.set(sc.skyTop);
+  tmp.k.set(regime === 'CRASH' ? '#ff6a6a' : sc.key);
+  env.skyTop.lerp(tmp.t, k);
+  env.key.lerp(tmp.k, k);
+  env.fogNear += (sc.fogNear - env.fogNear) * k;
+  env.fogFar += (sc.fogFar - env.fogFar) * k;
   tmp.r.set(r.color);
   env.primary.lerp(tmp.p, k);
   env.secondary.lerp(tmp.s, k);

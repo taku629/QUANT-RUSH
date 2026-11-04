@@ -22,12 +22,14 @@ import { Road } from './Road';
 import { Sky } from './Sky';
 import { Ghost } from './Ghost';
 import { Districts } from './Districts';
+import { Skyline } from './Skyline';
+import { Sidewalks } from './Sidewalks';
 
 function Lights() {
   const key = useRef<THREE.DirectionalLight>(null);
   const hemi = useRef<THREE.HemisphereLight>(null);
   useFrame(() => {
-    if (key.current) key.current.color.copy(env.primary);
+    if (key.current) key.current.color.copy(env.key).lerp(env.primary, 0.3);
     if (hemi.current) {
       hemi.current.color.copy(env.secondary);
       hemi.current.intensity = 0.9 + fx.lightning * 1.5;
@@ -143,7 +145,9 @@ export function GameCanvas({ onContextLost }: { onContextLost: () => void }) {
         <Sky />
         <Road />
         <City density={spec.city} />
-        <Districts />
+        <Districts density={spec.city} />
+        <Skyline />
+        <Sidewalks />
         <Gates />
         <Obstacles />
         <Pickups />

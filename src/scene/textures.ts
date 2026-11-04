@@ -122,28 +122,77 @@ export function windowsTexture() {
   return t;
 }
 
-export function signTexture(text: string, color: string, vertical: boolean) {
-  const key = `sign:${text}:${color}:${vertical}`;
+export type SignStyle = 'shop' | 'corporate' | 'brass' | 'neon' | 'pop';
+
+/** district signage (visual only): 兜町 shop boards, 大手町 corporate plates, 丸の内 brass, 六本木 neon tubes, 渋谷 pop */
+export function signTexture(text: string, color: string, vertical: boolean, style: SignStyle = 'neon') {
+  const key = `sign:${text}:${color}:${vertical}:${style}`;
   if (cache.has(key)) return cache.get(key)!;
   const chars = [...text];
   const w = vertical ? 128 : 64 + chars.length * 56;
   const h = vertical ? 64 + chars.length * 104 : 128;
   const [c, g] = canvas(w, h);
-  g.fillStyle = 'rgba(5,3,20,0.85)';
+  const jp = 'bold 88px "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "Hiragino Kaku Gothic ProN", serif';
+  const sans = 'bold 88px "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Arial, sans-serif';
+  let bg = 'rgba(5,3,20,0.85)';
+  let fg = '#ffffff';
+  let border = color;
+  let glow = 18;
+  let font = sans;
+  switch (style) {
+    case 'shop':
+      bg = '#2a1408';
+      fg = '#ffe8c8';
+      border = '#ff5a3c';
+      glow = 6;
+      font = jp;
+      break;
+    case 'corporate':
+      bg = 'rgba(8,16,40,0.92)';
+      fg = '#e8f0ff';
+      border = 'rgba(255,255,255,0.0)';
+      glow = 4;
+      break;
+    case 'brass':
+      bg = '#3a2410';
+      fg = '#ffd9a0';
+      border = '#c89a5a';
+      glow = 8;
+      font = jp;
+      break;
+    case 'neon':
+      bg = 'rgba(8,0,18,0.55)';
+      fg = color;
+      border = color;
+      glow = 28;
+      break;
+    case 'pop':
+      bg = color;
+      fg = '#0a0610';
+      border = '#ffffff';
+      glow = 10;
+      break;
+  }
+  g.fillStyle = bg;
   g.fillRect(0, 0, w, h);
-  g.strokeStyle = color;
-  g.lineWidth = 6;
-  g.shadowColor = color;
-  g.shadowBlur = 18;
-  g.strokeRect(8, 8, w - 16, h - 16);
-  g.fillStyle = '#ffffff';
-  g.font = 'bold 88px "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Arial, sans-serif';
+  g.strokeStyle = border;
+  g.lineWidth = style === 'corporate' ? 0 : 6;
+  g.shadowColor = border;
+  g.shadowBlur = glow;
+  if (style !== 'corporate') g.strokeRect(8, 8, w - 16, h - 16);
+  if (style === 'corporate') {
+    g.fillStyle = color;
+    g.fillRect(0, h - 14, w, 14);
+  }
+  g.fillStyle = fg;
+  g.font = font;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.shadowBlur = 24;
+  g.shadowColor = style === 'neon' ? color : fg;
+  g.shadowBlur = style === 'neon' ? 30 : style === 'pop' ? 0 : 12;
   if (vertical) chars.forEach((ch, i) => g.fillText(ch, w / 2, 84 + i * 104));
   else {
-    g.font = 'bold 76px "Arial Black", "Noto Sans JP", Arial, sans-serif';
+    g.font = font.replace('88px', '76px');
     g.fillText(text, w / 2, h / 2 + 4);
   }
   const t = finish(c);

@@ -2,7 +2,9 @@ import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { DISTRICTS, REGIME_STYLE } from '../game/content';
-import { createTicker, signTexture, windowsTexture } from './textures';
+import { createTicker, signTexture } from './textures';
+import { makeFacadeMaterial } from './facades';
+import { sceneryFor, vhash } from './scenery';
 import { env } from './env';
 import { active, sessionChanged } from './active';
 import type { GameSession } from '../game/session';
@@ -25,15 +27,25 @@ export function districtAtZ(s: GameSession, wz: number): number {
   return g && wz > g.z ? s.district + 1 : s.district;
 }
 
-type Slot2 = Slot & { d: number };
+type Slot2 = Slot & { d: number; style: number };
 
+/**
+ * Buildings: one InstancedMesh (facade atlas, per-instance style) + one crown mesh (eaves / glass crowns /
+ * cornices / setbacks / rooftop billboards) + spires. Each slot takes the look of the district at its world z,
+ * so the skyline visibly changes as you cross into a new district.
+ */
 export function City({ density }: { density: number }) {
   const n = Math.round(N * density);
   const bodies = useRef<THREE.InstancedMesh>(null);
-  const roofs = useRef<THREE.InstancedMesh>(null);
+  const crowns = useRef<THREE.InstancedMesh>(null);
   const spires = useRef<THREE.InstancedMesh>(null);
-  const tex = useMemo(() => windowsTexture(), []);
-  const slots = useMemo<Slot2[]>(() => Array.from({ length: n * 2 }, (_, i) => ({ wz: Math.floor(i / 2) * SPACING - 20, seed: i, d: -1 })), [n]);
+  const bodyGeo = useMemo(() => {
+    const g = new THREE.BoxGeometry(1, 1, 1);
+    g.setAttribute('aStyle', new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 1));
+    return g;
+  }, [n]);
+  const bodyMat = useMemo(() => makeFacadeMaterial(), []);
+  const slots = useMemo<Slot2[]>(() => Array.from({ length: n * 2 }, (_, i) => ({ wz: Math.floor(i / 2) * SPACING - 20, seed: i, d: -1, style: -1 })), [n]);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const col = useMemo(() => new THREE.Color(), []);
   const lastRegime = useRef('');
@@ -41,11 +53,14 @@ export function City({ density }: { density: number }) {
 
   useFrame(() => {
     const s = active();
-    if (!s || !bodies.current || !roofs.current || !spires.current) return;
+    if (!s || !bodies.current || !crowns.current || !spires.current) return;
     if (sessionChanged('city', s)) slots.forEach((sl, i) => { sl.wz = s.z + Math.floor(i / 2) * SPACING - 20; sl.d = -1; });
-    let recolorAll = lastRegime.current !== s.engine.regime;
+    const recolorAll = lastRegime.current !== s.engine.regime;
     lastRegime.current = s.engine.regime;
     const crash = s.engine.regime === 'CRASH';
+    const styleAttr = bodyGeo.getAttribute('aStyle') as THREE.InstancedBufferAttribute;
+    let styleDirty = false;
+    let colorDirty = false;
     slots.forEach((sl, i) => {
       let recolor = recolorAll;
       if (sl.wz < s.z - 30) {
@@ -58,59 +73,90 @@ export function City({ density }: { density: number }) {
         sl.d = dIdx;
         recolor = true;
       }
-      const d = DISTRICTS[dIdx % DISTRICTS.length];
-      const b = d.build;
+      const p = sceneryFor(dIdx);
+      if (sl.style !== p.facade) {
+        sl.style = p.facade;
+        styleAttr.setX(i, p.facade);
+        styleDirty = true;
+      }
       const side = i % 2 === 0 ? -1 : 1;
       const h1 = hash(sl.seed);
       const h2 = hash(sl.seed + 0.5);
       const h3 = hash(sl.seed + 0.9);
+      const empty = vhash(sl.seed * 1.37) < p.gaps;
       const far = h3 > 0.7;
-      const w = b.wMin + h1 * (b.wMax - b.wMin);
-      const height = (b.hMin + h2 * h2 * (b.hMax - b.hMin)) * (far ? 1.5 : 1);
-      const x = side * (11 + b.near + w / 2 + (far ? 14 + h3 * 30 : h3 * 6));
+      const w = p.wMin + h1 * (p.wMax - p.wMin);
+      const height = empty ? 0 : (p.hMin + h2 * h2 * (p.hMax - p.hMin)) * (far ? 1.35 : 1);
+      const len = p.depth * (0.75 + h3 * 0.5);
+      const x = side * (11 + p.near + w / 2 + (far ? 16 + h3 * 34 : h3 * 4));
       const z = -(sl.wz - s.z);
+      dummy.rotation.set(0, 0, 0);
       dummy.position.set(x, height / 2, z);
-      dummy.scale.set(w, height, 5 + h2 * 5);
+      dummy.scale.set(empty ? 0 : w, Math.max(0.001, height), empty ? 0 : len);
       dummy.updateMatrix();
       bodies.current!.setMatrixAt(i, dummy.matrix);
-      dummy.position.y = height + 0.15;
-      dummy.scale.set(w + 0.3, 0.3, 5.3 + h2 * 5);
+      // crown / roofline: the silhouette signature of each district
+      if (empty) dummy.scale.setScalar(0);
+      else
+        switch (p.crown) {
+          case 'eaves': // 兜町: wide flared eaves
+            dummy.position.set(x, height + 0.35, z);
+            dummy.scale.set(w + 2.6, 0.7, len + 2.6);
+            break;
+          case 'glassCrown': // 大手町: stepped glass crown
+            dummy.position.set(x, height + 5 + h1 * 5, z);
+            dummy.scale.set(w * 0.7, 10 + h1 * 10, len * 0.7);
+            break;
+          case 'cornice': // 丸の内: white stone cornice, even roofline
+            dummy.position.set(x, height + 0.5, z);
+            dummy.scale.set(w + 1, 1, len + 1);
+            break;
+          case 'setback': // 六本木: setback upper tower
+            dummy.position.set(x, height + height * 0.16, z);
+            dummy.scale.set(w * 0.62, height * 0.32, len * 0.62);
+            break;
+          case 'billboard': // 渋谷: rooftop billboard facing the road
+            dummy.position.set(x - side * (w / 2 - 0.3), height + 2.6 + h1 * 1.5, z);
+            dummy.scale.set(0.35, 5 + h1 * 3, len * 0.92);
+            break;
+        }
       dummy.updateMatrix();
-      roofs.current!.setMatrixAt(i, dummy.matrix);
-      const spire = hash(sl.seed + 2.3) < b.spire;
-      dummy.position.y = height + (spire ? 6 + h1 * 10 : 0);
-      dummy.scale.set(spire ? w * 0.35 : 0, spire ? 12 + h1 * 20 : 0, spire ? w * 0.35 : 0);
+      crowns.current!.setMatrixAt(i, dummy.matrix);
+      const spire = !empty && hash(sl.seed + 2.3) < p.spire;
+      const top = p.crown === 'setback' ? height * 1.32 : p.crown === 'glassCrown' ? height + 15 + h1 * 10 : height;
+      dummy.position.set(x, top + (spire ? 8 + h1 * 10 : 0), z);
+      dummy.scale.set(spire ? Math.max(1.2, w * 0.25) : 0, spire ? 16 + h1 * 20 : 0, spire ? Math.max(1.2, w * 0.25) : 0);
       dummy.updateMatrix();
       spires.current!.setMatrixAt(i, dummy.matrix);
       if (recolor) {
-        const palette = [d.primary, d.secondary, d.accent];
-        col.set(palette[Math.floor(h1 * 3) % 3]);
-        if (crash && h2 > 0.5) col.set('#ff2a4d');
-        bodies.current!.setColorAt(i, col.clone().multiplyScalar(0.9 + h2 * 0.6));
-        roofs.current!.setColorAt(i, col.multiplyScalar(2));
-        spires.current!.setColorAt(i, col);
-        recolorAll = recolorAll || false;
-        if (bodies.current!.instanceColor) bodies.current!.instanceColor.needsUpdate = true;
-        if (roofs.current!.instanceColor) roofs.current!.instanceColor.needsUpdate = true;
-        if (spires.current!.instanceColor) spires.current!.instanceColor.needsUpdate = true;
+        col.set(p.bodyTint[Math.floor(h1 * 3) % 3]);
+        if (crash && h2 > 0.55) col.lerp(CRASH_RED, 0.6);
+        bodies.current!.setColorAt(i, col.multiplyScalar(0.85 + h2 * 0.35));
+        if (p.crown === 'billboard') col.set(BILLBOARD[Math.floor(h2 * BILLBOARD.length)]).multiplyScalar(1.6);
+        else col.set(p.crownColor).multiplyScalar(p.crown === 'cornice' ? 1.1 : 1.6);
+        crowns.current!.setColorAt(i, col);
+        spires.current!.setColorAt(i, col.set(p.crownColor).multiplyScalar(1.4));
+        colorDirty = true;
       }
     });
     bodies.current.instanceMatrix.needsUpdate = true;
-    roofs.current.instanceMatrix.needsUpdate = true;
+    crowns.current.instanceMatrix.needsUpdate = true;
     spires.current.instanceMatrix.needsUpdate = true;
-    const m = bodies.current.material as THREE.MeshBasicMaterial;
+    if (styleDirty) styleAttr.needsUpdate = true;
+    if (colorDirty) {
+      if (bodies.current.instanceColor) bodies.current.instanceColor.needsUpdate = true;
+      if (crowns.current.instanceColor) crowns.current.instanceColor.needsUpdate = true;
+      if (spires.current.instanceColor) spires.current.instanceColor.needsUpdate = true;
+    }
     const reduce = useGame.getState().settings.reduceMotion;
     const flicker = !reduce && env.danger > 0.8 && Math.sin(env.time * 37) > 0.7 ? 0.6 : 1;
-    m.color.setScalar(flicker);
+    bodyMat.color.setScalar(flicker);
   });
 
   return (
     <group>
-      <instancedMesh key={`b${n}`} ref={bodies} args={[undefined, undefined, n * 2]} frustumCulled={false}>
-        <boxGeometry args={[1, 1, 1]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
-      </instancedMesh>
-      <instancedMesh key={`r${n}`} ref={roofs} args={[undefined, undefined, n * 2]} frustumCulled={false}>
+      <instancedMesh key={`b${n}`} ref={bodies} args={[bodyGeo, bodyMat, n * 2]} frustumCulled={false} />
+      <instancedMesh key={`r${n}`} ref={crowns} args={[undefined, undefined, n * 2]} frustumCulled={false}>
         <boxGeometry args={[1, 1, 1]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
@@ -118,50 +164,67 @@ export function City({ density }: { density: number }) {
         <coneGeometry args={[0.5, 1, 4]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
-      <Signs />
+      <Signs density={density} />
       <Candles count={Math.round(70 * density)} />
       <Tickers />
     </group>
   );
 }
 
-const SIGNS = 18;
-const SIGN_GAP = 34;
+const CRASH_RED = new THREE.Color('#ff2a4d');
+const BILLBOARD = ['#ffffff', '#ff3d8b', '#ffd23d', '#3dffcf', '#a6ff00', '#7a5cff', '#00d0ff'];
 
-function Signs() {
+const SIGN_GAP = 26;
+
+/** signage: style, size and mounting height differ per district */
+const SIGN_LAYOUT: Record<string, { x: number; yMin: number; yRange: number; scale: number; every: number }> = {
+  shop: { x: 9.4, yMin: 3.5, yRange: 3, scale: 0.85, every: 1 },
+  corporate: { x: 15.5, yMin: 16, yRange: 22, scale: 1.6, every: 2 },
+  brass: { x: 9.8, yMin: 4.5, yRange: 2, scale: 0.7, every: 2 },
+  neon: { x: 11.5, yMin: 8, yRange: 16, scale: 1.25, every: 1 },
+  pop: { x: 10.5, yMin: 4, yRange: 20, scale: 1.1, every: 1 },
+};
+
+function Signs({ density }: { density: number }) {
+  const count = Math.max(12, Math.round(26 * density));
   const refs = useRef<THREE.Mesh[]>([]);
-  const state = useMemo(() => Array.from({ length: SIGNS }, (_, i) => ({ wz: 60 + i * SIGN_GAP, key: '' })), []);
+  const state = useMemo(() => Array.from({ length: count }, (_, i) => ({ wz: 60 + i * SIGN_GAP, key: '' })), [count]);
   useFrame(() => {
     const s = active();
     if (!s) return;
     if (sessionChanged('signs', s)) state.forEach((st, i) => { st.wz = s.z + 60 + i * SIGN_GAP; st.key = ''; });
     state.forEach((st, i) => {
-      if (st.wz < s.z - 20) st.wz += SIGNS * SIGN_GAP;
-      const d = DISTRICTS[districtAtZ(s, st.wz) % DISTRICTS.length];
+      if (st.wz < s.z - 20) st.wz += count * SIGN_GAP;
+      const dIdx = districtAtZ(s, st.wz);
+      const d = DISTRICTS[dIdx % DISTRICTS.length];
+      const p = sceneryFor(dIdx);
+      const lay = SIGN_LAYOUT[p.signStyle];
       const mesh = refs.current[i];
       if (!mesh) return;
       const seed = Math.floor(st.wz / SIGN_GAP);
+      mesh.visible = seed % lay.every === 0;
       const word = d.signs[seed % d.signs.length];
       const color = [d.primary, d.secondary, d.accent][seed % 3];
-      const vertical = /[^\x00-\x7F]/.test(word);
-      const key = `${word}|${color}`;
+      const vertical = p.signStyle === 'shop' || (p.signStyle !== 'corporate' && /[^\x00-\x7F]/.test(word));
+      const key = `${word}|${color}|${p.signStyle}`;
       if (key !== st.key) {
         st.key = key;
         const mat = mesh.material as THREE.MeshBasicMaterial;
-        mat.map = signTexture(word, color, vertical);
+        mat.map = signTexture(word, color, vertical, p.signStyle);
         mat.needsUpdate = true;
         const chars = [...word].length;
-        if (vertical) mesh.scale.set(2.2, 1.1 + chars * 1.8, 1);
-        else mesh.scale.set(1.2 + chars * 1.05, 2.2, 1);
+        const k = lay.scale;
+        if (vertical) mesh.scale.set(2.2 * k, (1.1 + chars * 1.8) * k, 1);
+        else mesh.scale.set((1.2 + chars * 1.05) * k, 2.2 * k, 1);
       }
       const side = seed % 2 === 0 ? -1 : 1;
-      mesh.position.set(side * (10.5 + (seed % 3) * 0.6), 7 + (seed % 4) * 2.5, -(st.wz - s.z));
+      mesh.position.set(side * (lay.x + (seed % 3) * 0.6), lay.yMin + vhash(seed) * lay.yRange, -(st.wz - s.z));
       mesh.rotation.y = side * -0.55;
     });
   });
   return (
     <group>
-      {Array.from({ length: SIGNS }, (_, i) => (
+      {state.map((_, i) => (
         <mesh key={i} ref={(m) => { if (m) refs.current[i] = m; }}>
           <planeGeometry args={[1, 1]} />
           <meshBasicMaterial transparent toneMapped={false} side={THREE.DoubleSide} />
