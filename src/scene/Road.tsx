@@ -32,7 +32,7 @@ export function Road() {
     g.strokeRect(0, 0, 128, 128);
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    t.repeat.set(40, ROAD_LEN / 10);
+    t.repeat.set(6.4, ROAD_LEN / 10);
     return t;
   }, []);
   const gridMat = useRef<THREE.MeshBasicMaterial>(null);
@@ -45,7 +45,9 @@ export function Road() {
     gridTex.offset.y = (s.z / 10) % 1;
     laneMats.current.forEach((m, i) => {
       const on = s.quoteLane === i;
-      m.opacity = on ? 0.2 + Math.sin(env.time * 10) * 0.05 : 0.035;
+      m.opacity = on ? 0.2 + Math.sin(env.time * 10) * 0.05 : 0;
+      // only the active lane strip is drawn: two near-invisible full-length blended planes cost real fill rate
+      m.visible = on;
     });
     railMats.current.forEach((m, i) => m.color.copy(i === 0 ? env.primary : env.secondary).multiplyScalar(1.6));
     if (gridMat.current) gridMat.current.color.copy(env.primary).multiplyScalar(0.35 + env.danger * 0.3);
@@ -69,10 +71,11 @@ export function Road() {
         <planeGeometry args={[13, ROAD_LEN, 1, 140]} />
         <meshBasicMaterial map={tex} toneMapped={false} />
       </mesh>
-      {/* city ground grid */}
+      {/* city ground grid — opaque (no blending) and only as wide as the street canyon: the old 400 m additive
+          plane was mostly hidden behind buildings yet blended every pixel (−20% FPS in fill-bound profiling) */}
       <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, -ROAD_LEN / 2 + 40]}>
-        <planeGeometry args={[400, ROAD_LEN, 8, 140]} />
-        <meshBasicMaterial ref={gridMat} map={gridTex} transparent opacity={0.9} blending={THREE.AdditiveBlending} depthWrite={false} />
+        <planeGeometry args={[64, ROAD_LEN, 2, 140]} />
+        <meshBasicMaterial ref={gridMat} map={gridTex} />
       </mesh>
       {LANE_X.map((x, i) => (
         <mesh key={i} rotation-x={-Math.PI / 2} position={[x, 0.02, -ROAD_LEN / 2 + 40]}>

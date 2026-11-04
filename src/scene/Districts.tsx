@@ -27,10 +27,13 @@ type DecorDef = {
   place: (d: THREE.Object3D, k: number, wz: number, t: number) => void;
   /** animate colour (optional) */
   tint?: (c: THREE.Color, t: number) => void;
+  /** fill-heavy (large additive surfaces): skipped on the LOW tier */
+  heavy?: boolean;
 };
 
 function DecorInstances({ def, density }: { def: DecorDef; density: number }) {
-  const count = Math.max(4, Math.round(def.count * (density < 0.7 ? 0.7 : 1)));
+  const low = density < 0.7;
+  const count = Math.max(4, Math.round(def.count * (low ? (def.additive ? 0.5 : 0.7) : 1)));
   const ref = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const mat = useMemo(
@@ -48,6 +51,10 @@ function DecorInstances({ def, density }: { def: DecorDef; density: number }) {
   useFrame(() => {
     const s = active();
     if (!s || !ref.current) return;
+    if (low && def.heavy) {
+      ref.current.visible = false;
+      return;
+    }
     // skip the draw call (and the matrix work) when this family's district is neither here nor next
     const here = DISTRICTS[s.district % DISTRICTS.length].id;
     const next = DISTRICTS[(s.district + 1) % DISTRICTS.length].id;
@@ -111,7 +118,7 @@ export function decorDefs(): DecorDef[] {
   // elevated interchange ramps far beyond the street wall (thin, lit edges — background only)
   D.push({ district: 'roppongi', count: 8, gap: 90, phase: 40, color: '#5a3a7a', geo: new THREE.TorusGeometry(40, 0.8, 4, 40, Math.PI * 0.55), place: (d, k) => { d.position.set(side(k) * 66, 11, 0); d.rotation.set(Math.PI / 2, 0, side(k) * 0.5); } });
   D.push({ district: 'roppongi', count: 8, gap: 90, phase: 40, color: '#ff4dd2', geo: new THREE.TorusGeometry(40, 0.22, 4, 40, Math.PI * 0.55), place: (d, k) => { d.position.set(side(k) * 66, 12, 0); d.rotation.set(Math.PI / 2, 0, side(k) * 0.5); } });
-  D.push({ district: 'roppongi', count: 6, gap: 80, phase: 10, color: '#d8b8ff', additive: true, opacity: 0.12, geo: new THREE.ConeGeometry(5, 120, 12, 1, true), place: (d, k, _wz, t) => { d.position.set(side(k) * 40, 60, 0); d.rotation.set(Math.sin(t * 0.6 + k) * 0.5, 0, side(k) * (0.3 + Math.sin(t * 0.45 + k * 1.7) * 0.25) + Math.PI); } });
+  D.push({ district: 'roppongi', heavy: true, count: 6, gap: 80, phase: 10, color: '#d8b8ff', additive: true, opacity: 0.12, geo: new THREE.ConeGeometry(5, 120, 12, 1, true), place: (d, k, _wz, t) => { d.position.set(side(k) * 40, 60, 0); d.rotation.set(Math.sin(t * 0.6 + k) * 0.5, 0, side(k) * (0.3 + Math.sin(t * 0.45 + k * 1.7) * 0.25) + Math.PI); } });
 
   // ── 渋谷: scramble crossing stripes, giant facade screens, street kiosks, hanging banners
   D.push({ district: 'shibuya', count: 40, gap: 9, color: '#5a6070', additive: true, geo: new THREE.PlaneGeometry(12.6, 1.4), place: (d, _k, wz) => { d.rotation.x = -Math.PI / 2; d.position.set(0, 0.04, 0); d.scale.set(Math.floor(wz / 90) % 2 === 0 ? 1 : 0, 1, 1); } });

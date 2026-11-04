@@ -67,7 +67,7 @@ function Post({ post }: { post: TierSpec['post'] }) {
   if (post === 'bloom')
     return (
       <EffectComposer multisampling={0}>
-        <Bloom intensity={0.9} luminanceThreshold={0.6} luminanceSmoothing={0.25} mipmapBlur radius={0.6} levels={5} />
+        <Bloom intensity={0.9} luminanceThreshold={0.6} luminanceSmoothing={0.25} mipmapBlur radius={0.6} levels={3} resolutionScale={0.5} />
       </EffectComposer>
     );
   return (

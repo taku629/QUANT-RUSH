@@ -13,7 +13,9 @@ export function Sky() {
     () =>
       new THREE.ShaderMaterial({
         side: THREE.BackSide,
+        // drawn AFTER the opaque city with depth testing, so sky pixels hidden behind buildings are never shaded
         depthWrite: false,
+        depthTest: true,
         uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, flash: { value: 0 }, t: { value: 0 } },
         vertexShader: `varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
         fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform float flash; uniform float t; varying vec3 vP;
@@ -126,7 +128,7 @@ export function Sky() {
   });
   return (
     <group>
-      <mesh ref={dome} material={mat} renderOrder={-10}>
+      <mesh ref={dome} material={mat} renderOrder={1000}>
         <sphereGeometry args={[900, 32, 16]} />
       </mesh>
       <points geometry={stars}>

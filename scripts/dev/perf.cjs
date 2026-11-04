@@ -24,8 +24,10 @@ const [url, quality = 'auto', mobile] = process.argv.slice(2);
       while (!(s.district >= d && s.districtProgress >= 0.38) && i < 60 * 300) { s.update(autopilot(s, i++)); s.drainEvents(); }
       fx.hitstop = 1e9;
     }, d);
-    await page.waitForTimeout(3000);
-    rows.push(await page.evaluate(() => { const t = window.__QUANT_RUSH__.tier.getState(); return { calls: t.calls, tris: t.tris, fps: t.fps, tier: t.tier }; }));
+    await page.waitForTimeout(1500);
+    // count real frames over 3 s (much less noisy than the 0.5 s in-game sampler)
+    const fps = await page.evaluate(() => new Promise((res) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 3000) requestAnimationFrame(f); else res(n / ((performance.now() - t0) / 1000)); }; requestAnimationFrame(f); }));
+    rows.push(await page.evaluate((fps) => { const t = window.__QUANT_RUSH__.tier.getState(); return { calls: t.calls, tris: t.tris, fps: Math.round(fps * 10) / 10, tier: t.tier }; }, fps));
     await page.evaluate(() => { window.__QUANT_RUSH__.fx.hitstop = 0; });
   }
   const mean = (k) => (rows.reduce((a, r) => a + r[k], 0) / rows.length).toFixed(1);
