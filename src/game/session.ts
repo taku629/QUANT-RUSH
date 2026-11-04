@@ -19,6 +19,8 @@ const FIN_EVERY = Math.round(DEFAULT_CONFIG.dt / FIXED_DT); // 3 action ticks pe
 
 import { Spawner, type ObstacleKind, type PickupKind, type Placement } from './spawner';
 import { makeTrack, type TrackShape } from './track';
+import { BALANCE } from './gameBalanceConfig';
+import { LaneAdvisor } from './recommend';
 export type { ObstacleKind } from './spawner';
 
 export type Pickup = { id: number; kind: PickupKind; lane: LaneId; x: number; z: number; used: boolean };
@@ -62,6 +64,11 @@ export type FxEvent =
   | { type: 'boost' }
   | { type: 'bump' }
   | { type: 'block'; side: 'BUY' | 'SELL'; qty: number; filled: boolean }
+  | { type: 'recLane'; lane: LaneId; danger: number }
+  | { type: 'coin'; x: number; z: number; points: number }
+  | { type: 'settle'; risk: number; points: number; sweet: boolean; qty: number; cost: number }
+  | { type: 'riskBurst'; qty: number; cost: number }
+  | { type: 'clear'; x: number; z: number }
   | { type: 'land' }
   | { type: 'lane'; lane: LaneId }
   | { type: 'gate'; passed: boolean; bonus: number; district: number; final: boolean; inventory: number }
@@ -79,26 +86,26 @@ export type EndReason = 'TIME' | 'KNOCKOUT' | 'STOPPED_OUT' | 'MARKET_CLOSE';
 
 export type Input = { left: number; right: number; jump: boolean; hedge: boolean; alpha: boolean };
 
+/** Game rules — tunable values come from gameBalanceConfig.ts (geometry constants stay here). */
 export const GAME_RULES = {
-  startTime: 30,
-  /** time bonus for a passed gate: gatePassBonus − district × gateDecay (min gateMinBonus) */
-  gatePassBonus: 16,
-  gateDecay: 1.5,
-  gateMinBonus: 9,
-  gateFailBonus: 6,
-  overtimePassBonus: 8,
-  overtimeFailBonus: 3,
-  /** inventory check at settlement gates: |inventory| ≤ this passes */
-  gateInventoryLimit: 500,
-  offlineTime: 1.4,
-  invulnTime: 2.2,
-  alphaDuration: 6.5,
-  alphaSpeedMul: 1.55,
-  comboTimeout: 3.5,
+  startTime: BALANCE.time.start,
+  gatePassBonus: BALANCE.time.gatePass,
+  gateDecay: BALANCE.time.gateDecay,
+  gateMinBonus: BALANCE.time.gateMin,
+  gateFailBonus: BALANCE.time.gateFail,
+  overtimePassBonus: BALANCE.time.overtimePass,
+  overtimeFailBonus: BALANCE.time.overtimeFail,
+  /** gate risk check: RISK gauge must be below this (0–1) */
+  gateRiskMax: BALANCE.risk.gateMax,
+  offlineTime: BALANCE.action.offlineTime,
+  invulnTime: BALANCE.action.invulnTime,
+  alphaDuration: BALANCE.action.alphaDuration,
+  alphaSpeedMul: BALANCE.action.alphaSpeedMul,
+  comboTimeout: BALANCE.action.comboTimeout,
   laneWidth: 4,
   playerWidth: 1.1,
   playerLen: 1.8,
-  nearMissGap: 0.75,
+  nearMissGap: BALANCE.action.nearMissGap,
 } as const;
 
 export class GameSession {
@@ -157,6 +164,21 @@ export class GameSession {
   /** tutorial freezes the clock */
   timerFrozen = false;
 
+  // v3: recommended lane + RISK gauge
+  readonly advisor = new LaneAdvisor();
+  /** RISK gauge 0..1 = |inventory| / fullInventory × regime volatility multiplier */
+  risk = 0;
+  maxRisk = 0;
+  settlements = 0;
+  settlePoints = 0;
+  riskBursts = 0;
+  coins = 0;
+  /** seconds spent in the recommended lane */
+  recLaneTime = 0;
+  private burstQueued = false;
+  /** seconds the gauge has been at 100 % (forced liquidation after BALANCE.risk.burstGrace) */
+  overload = 0;
+
   obstacles: Obstacle[] = [];
   private obstacleId = 0;
   readonly spawner: Spawner;
@@ -185,7 +207,7 @@ export class GameSession {
     this.rng = createRng(hashSeed(seed, 'world'));
     this.spawner = new Spawner(this.rng);
     this.track = makeTrack(seed);
-    this.gauge = 50; // first ALPHA DRIVE comes within the first ~15 s of good play
+    this.gauge = BALANCE.action.gaugeStart; // first ALPHA DRIVE comes within the first ~15 s of good play
     this.layoutGate(0);
   }
 
@@ -315,9 +337,9 @@ export class GameSession {
     const nearest = Math.round((this.x + GAME_RULES.laneWidth) / GAME_RULES.laneWidth);
     this.quoteLane = Math.max(0, Math.min(2, nearest)) as LaneId;
 
-    const lapBoost = this.lap * 4;
-    let target = this.vehicle.baseSpeed + Math.min(this.district, 4) * 2.2 + lapBoost + Math.min(this.combo, 40) * 0.22;
-    if (this.boost > 0) target += 14;
+    const S = BALANCE.speed;
+    let target = this.vehicle.baseSpeed * S.baseMul + Math.min(this.district, 4) * S.perDistrict + this.lap * S.perLap + Math.min(this.combo, 40) * S.perCombo;
+    if (this.boost > 0) target += S.boost;
     if (this.alpha > 0) target *= GAME_RULES.alphaSpeedMul;
     if (this.stumble > 0) target *= 0.45;
     const accel = this.speed < target ? (this.boost > 0 ? 40 : this.vehicle.accel) : 30;
@@ -356,14 +378,28 @@ export class GameSession {
   private marketTick() {
     const hedge = this.hedgeQueued;
     this.hedgeQueued = false;
-    const ev: StepEvents = this.engine.step({ lane: this.quoteLane, hedge, quoting: this.stumble <= 0, rebate: this.alpha > 0 });
+    const burst = this.burstQueued;
+    this.burstQueued = false;
+    const riskBefore = this.risk;
+    const ev: StepEvents = this.engine.step({
+      lane: this.quoteLane, hedge, quoting: this.stumble <= 0, rebate: this.alpha > 0,
+      ...(burst ? { forceFlatten: BALANCE.risk.burstPenaltyPerShare } : {}),
+    });
+    // recommended lane (public signals only) — when it moves, clear blocking obstacles from the new lane
+    const moved = this.advisor.update(this.engine, this.t);
+    if (moved !== null) {
+      this.clearLane(moved);
+      this.emit({ type: 'recLane', lane: moved, danger: this.advisor.danger });
+    }
+    if (this.quoteLane === this.advisor.lane) this.recLaneTime += this.engine.cfg.dt;
     if (ev.headline || this.lastRegime !== this.engine.regime) {
       this.lastRegime = this.engine.regime;
       this.emit({ type: 'regime', regime: this.engine.regime, text: ev.headline?.text ?? this.engine.regime });
     }
     for (const f of ev.fills) {
       this.addCombo(1);
-      const pts = f.spread * 10 * this.comboMultiplier * (this.alpha > 0 ? 2 : 1);
+      const SC = BALANCE.score;
+      const pts = f.spread * SC.perSpreadDollar * this.comboMultiplier * (this.alpha > 0 ? 2 : 1) * (f.lane === this.advisor.lane ? SC.recLaneMul : 1);
       this.tradingPoints += pts;
       this.addGauge(1.5 + f.halfSpread * 20);
       this.emit({ type: 'fill', fill: f, points: Math.round(pts) });
@@ -382,11 +418,32 @@ export class GameSession {
         this.breakCombo('TOXIC FLOW');
       }
     }
-    if (ev.hedge) {
+    if (ev.hedge?.forced) {
+      // RISK BURST: forced liquidation at a penalty (booked as hedge cost), no bonus, combo lost
+      this.riskBursts++;
+      this.breakCombo('RISK BURST');
+      this.emit({ type: 'riskBurst', qty: ev.hedge.qty, cost: ev.hedge.cost });
+    } else if (ev.hedge) {
+      // settlement bonus (SCORE only — money is untouched): bigger the closer you dared to 100 %
+      const R = BALANCE.risk;
+      const sweet = riskBefore >= R.warnAt;
+      const pts = Math.round(riskBefore * 100 * R.settlePointsPerPct * (sweet ? R.sweetSpotMul : 1));
+      this.settlements++;
+      this.settlePoints += pts;
+      this.actionPoints += pts;
+      if (sweet) this.addGauge(10);
       this.emit({ type: 'hedge', qty: ev.hedge.qty, cost: ev.hedge.cost });
-      const risky = ev.hedge.regime === 'VOLATILE' || ev.hedge.regime === 'CRASH';
-      if (risky && Math.abs(ev.hedge.qty) >= 400) this.addGauge(10);
+      this.emit({ type: 'settle', risk: riskBefore, points: pts, sweet, qty: ev.hedge.qty, cost: ev.hedge.cost });
     } else if (hedge && ev.hedgeRejected) this.emit({ type: 'hedgeRejected', reason: ev.hedgeRejected });
+    // RISK gauge after this tick; at 100 % the next tick force-liquidates
+    const R = BALANCE.risk;
+    this.risk = Math.min(1, (Math.abs(this.engine.inventory) / R.fullInventory) * (R.regimeMul[this.engine.regime] ?? 1));
+    this.maxRisk = Math.max(this.maxRisk, this.risk);
+    if (this.risk >= 1) {
+      // OVERLOAD: a short, visible grace period — HEDGE now still settles normally
+      this.overload += this.engine.cfg.dt;
+      if (this.overload >= R.burstGrace && !hedge) this.burstQueued = true;
+    } else this.overload = 0;
     if (ev.limitHit) this.emit({ type: 'limit' });
     if (ev.stoppedOut) this.finish('STOPPED_OUT');
   }
@@ -412,12 +469,30 @@ export class GameSession {
     if (p.kind === 'spike') Object.assign(base, { w: 1.3, h: 3.2, len: 1.3 });
     if (p.kind === 'debris') Object.assign(base, { w: 2.4, h: 2.0, len: 2.4, y: 26 });
     if (p.kind === 'wall') Object.assign(base, { w: 1.0, h: 2.4, len: p.len ?? 80, x: 0 });
+    if (p.kind === 'warning') Object.assign(base, { w: 3.4, h: 2.6, len: 0.8 });
     this.obstacles.push(base);
   }
 
   /** target speed estimate used by the spawner for fairness checks */
   private cruiseSpeed() {
-    return this.vehicle.baseSpeed + Math.min(this.district, 4) * 2.2 + this.lap * 4 + 10;
+    const S = BALANCE.speed;
+    return this.vehicle.baseSpeed * S.baseMul + Math.min(this.district, 4) * S.perDistrict + this.lap * S.perLap + 10;
+  }
+
+  /** the recommended lane moved: remove non-jumpable obstacles from it (and from the lane in between, near term) */
+  private clearLane(lane: LaneId) {
+    const from = this.quoteLane;
+    for (const o of this.obstacles) {
+      if (!o.alive || o.kind === 'barrier') continue;
+      const ahead = o.z - this.z;
+      if (ahead < 15) continue;
+      const inNew = o.lane === lane || o.targetLane === lane;
+      const between = Math.abs(lane - from) === 2 && o.lane === 1 && ahead < 60;
+      if (inNew || between) {
+        o.alive = false;
+        this.emit({ type: 'clear', x: o.x, z: o.z });
+      }
+    }
   }
 
   private updateObstacles(dt: number) {
@@ -429,15 +504,24 @@ export class GameSession {
         playerZ: this.z, speed: this.cruiseSpeed(), regime: this.engine.regime,
         progress: Math.max(0, Math.min(1, (sp.nextZ - this.districtStartZ) / gateLen)),
         district: this.district, lap: this.lap, t: this.t, gateZ: g.z,
+        rec: this.advisor.lane, danger: this.advisor.danger,
       });
       for (const p of res.obstacles) this.place(p);
       for (const pk of res.pickups) this.pickups.push({ id: this.obstacleId++, kind: pk.kind, lane: pk.lane, x: LANE_X[pk.lane], z: pk.z, used: false });
       sp.nextZ += res.gap;
     }
-    // pickups: ramps launch you, boost pads accelerate you
+    // pickups: ramps launch you, boost pads accelerate you, coins pay score
     for (const pk of this.pickups) {
       if (pk.used || Math.abs(pk.z - this.z) > 2.2 || Math.abs(pk.x - this.x) > 1.7) continue;
-      if (pk.kind === 'ramp' && this.grounded) {
+      if (pk.kind === 'coin') {
+        if (this.y > 3) continue;
+        pk.used = true;
+        this.coins++;
+        const pts = Math.round(BALANCE.score.coinPoints * this.comboMultiplier);
+        this.actionPoints += pts;
+        this.addGauge(BALANCE.score.coinGauge);
+        this.emit({ type: 'coin', x: pk.x, z: pk.z, points: pts });
+      } else if (pk.kind === 'ramp' && this.grounded) {
         pk.used = true;
         this.vy = 13 + this.vehicle.rampBonus;
         this.grounded = false;
@@ -445,7 +529,7 @@ export class GameSession {
         this.emit({ type: 'ramp' });
       } else if (pk.kind === 'boost' && this.y < 0.5) {
         pk.used = true;
-        this.boost = 1.3;
+        this.boost = BALANCE.speed.boostTime;
         this.boosts++;
         this.addGauge(4);
         this.emit({ type: 'boost' });
@@ -476,7 +560,7 @@ export class GameSession {
             this.smashes++;
             this.smashesThisAlpha++;
             // anti-farming: only the first few smashes of each ALPHA DRIVE score
-            const pts = this.smashesThisAlpha <= 5 ? 250 * this.comboMultiplier : 0;
+            const pts = this.smashesThisAlpha <= BALANCE.score.smashCapPerAlpha ? BALANCE.score.smashPoints * this.comboMultiplier : 0;
             this.actionPoints += pts;
             this.addCombo(1);
             this.emit({ type: 'smash', kind: o.kind, x: o.x, z: o.z, points: Math.round(pts) });
@@ -491,10 +575,10 @@ export class GameSession {
         o.passed = true;
         if (!o.hit && o.kind !== 'wall' && o.minGap < P.nearMissGap && this.invuln <= 0) {
           this.nearMisses++;
-          const pts = 150 * this.comboMultiplier;
+          const pts = BALANCE.score.nearMissPoints * this.comboMultiplier;
           this.actionPoints += pts;
           this.addCombo(1);
-          this.addGauge(12);
+          this.addGauge(BALANCE.action.gaugeNearMiss);
           this.emit({ type: 'nearmiss', points: Math.round(pts), air: o.kind === 'barrier', x: o.x, z: o.z });
         }
       }
@@ -522,7 +606,7 @@ export class GameSession {
     if (!g || this.z < g.z) return;
     g.passed = true;
     const inv = this.engine.inventory;
-    const ok = Math.abs(inv) <= GAME_RULES.gateInventoryLimit;
+    const ok = this.risk < GAME_RULES.gateRiskMax;
     const overtime = this.lap > 0;
     const bonus = ok
       ? overtime ? GAME_RULES.overtimePassBonus : Math.max(GAME_RULES.gateMinBonus, GAME_RULES.gatePassBonus - this.district * GAME_RULES.gateDecay)
@@ -530,14 +614,14 @@ export class GameSession {
     this.timeLeft += bonus;
     if (ok) {
       this.gatesPassed++;
-      this.actionPoints += 1000 * (1 + this.lap * 0.5);
+      this.actionPoints += BALANCE.score.gatePoints * (1 + this.lap * 0.5);
       this.addCombo(3);
-      this.addGauge(20);
+      this.addGauge(BALANCE.action.gaugeGate);
       this.stability = Math.min(this.vehicle.stability, this.stability + 1); // repair on a clean settlement
     } else this.gatesFailed++;
     this.emit({ type: 'gate', passed: ok, bonus, district: g.district, final: g.final, inventory: inv });
     if (g.final) {
-      if (!this.goalReached) this.actionPoints += 5000;
+      if (!this.goalReached) this.actionPoints += BALANCE.score.goalPoints;
       this.goalReached = true;
       this.lap++;
     }

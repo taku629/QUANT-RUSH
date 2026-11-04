@@ -8,9 +8,10 @@
  */
 import type { LaneId, RegimeId } from '../sim/config';
 import type { Rng } from '../sim/rng';
+import { BALANCE } from './gameBalanceConfig';
 
-export type ObstacleKind = 'car' | 'barrier' | 'spike' | 'debris' | 'oncoming' | 'wall';
-export type PickupKind = 'ramp' | 'boost';
+export type ObstacleKind = 'car' | 'barrier' | 'spike' | 'debris' | 'oncoming' | 'wall' | 'warning';
+export type PickupKind = 'ramp' | 'boost' | 'coin';
 
 export type Placement = {
   kind: ObstacleKind;
@@ -40,6 +41,9 @@ export type SpawnContext = {
   t: number;
   /** z of the next settlement gate */
   gateZ: number;
+  /** v3: recommended lane (never gets a non-jumpable obstacle) and bit mask of dangerous lanes */
+  rec: LaneId;
+  danger: number;
 };
 
 type Row = { z: number; mask: number; jump?: boolean };
@@ -100,27 +104,35 @@ export class Spawner {
   }
 
   /**
-   * Produce the next pattern. Returns null when nothing should spawn (breather / runway / gate zone).
+   * v3 patterns — the course agrees with the market:
+   *  - recommended lane: profit coins + only JUMPABLE gimmicks (low barrier, ramp) → right decision = safe, rich run
+   *  - dangerous lanes (fast/one-sided markets): warning barricades and regime hazards
+   *  - other lanes: light slow traffic in calm markets, tempting boost pads
+   * Non-jumpable obstacles are never placed in the recommended lane (tested).
    */
   next(ctx: SpawnContext): { obstacles: Placement[]; pickups: PickupPlacement[]; gap: number } {
     const r = this.rng;
     const z = this.nextZ;
-    if (this.forks.length > 8) this.forks = this.forks.filter((f) => f.to > ctx.playerZ - 50);
+    const C = BALANCE.course;
+    const rec = ctx.rec;
     const phase = phaseAt(ctx.progress);
-    const fast = ctx.regime === 'VOLATILE' || ctx.regime === 'CRASH';
-    const hard = Math.min(1, ctx.district * 0.12 + ctx.lap * 0.25 + (ctx.regime === 'CRASH' ? 0.25 : ctx.regime === 'VOLATILE' ? 0.12 : 0));
     const out = { obstacles: [] as Placement[], pickups: [] as PickupPlacement[], gap: 40 };
-    const pickLane = () => r.int(0, 2) as LaneId;
+    const others = ([0, 1, 2] as LaneId[]).filter((l) => l !== rec);
+    const dangers = others.filter((l) => (ctx.danger >> l) & 1);
+    const coins = (n: number, z0: number) => {
+      for (let k = 0; k < n; k++) out.pickups.push({ kind: 'coin', lane: rec, z: z0 + k * 6 });
+    };
     const nearGate = z > ctx.gateZ - 55 && z < ctx.gateZ + 30;
 
-    // --- scripted first 15 seconds: show off the core verbs quickly ---
+    // --- scripted first ~15 s: teach "follow the glowing lane" ---
     if (this.scripted && ctx.district === 0 && ctx.lap === 0) {
+      const other = others[0];
       const script: (() => void)[] = [
-        () => { out.pickups.push({ kind: 'boost', lane: 1, z }); out.gap = 45; },
-        () => { out.obstacles.push({ kind: 'car', lane: 0, z, speed: 16 }); out.gap = 50; },
-        () => { out.pickups.push({ kind: 'ramp', lane: 1, z }); out.obstacles.push({ kind: 'car', lane: 1, z: z + 20, speed: 12 }); out.gap = 70; },
-        () => { out.obstacles.push({ kind: 'barrier', lane: 1, z, span: 3 }); out.gap = 55; },
-        () => { out.obstacles.push({ kind: 'car', lane: 2, z, speed: 14 }, { kind: 'car', lane: 0, z, speed: 14 }); out.gap = 60; },
+        () => { out.pickups.push({ kind: 'boost', lane: rec, z }); coins(4, z + 12); out.gap = 50; },
+        () => { out.obstacles.push({ kind: 'barrier', lane: rec, z, span: 1 }); coins(3, z + 14); out.gap = 50; },
+        () => { out.pickups.push({ kind: 'ramp', lane: rec, z }); coins(3, z + 26); out.gap = 60; },
+        () => { out.obstacles.push({ kind: 'car', lane: other, z, speed: 14 }); coins(3, z); out.gap = 50; },
+        () => { out.obstacles.push({ kind: 'warning', lane: others[1] ?? other, z }); coins(3, z); out.gap = 55; },
       ];
       const i = this.scriptStep++;
       script[Math.min(i, script.length - 1)]();
@@ -128,94 +140,38 @@ export class Spawner {
       return this.accept(out, ctx) ?? { obstacles: [], pickups: out.pickups, gap: out.gap };
     }
 
-    if (nearGate || phase === 'RUNWAY') {
-      out.gap = 30;
-      if (r.next() < 0.5) out.pickups.push({ kind: 'boost', lane: pickLane(), z });
-      return out;
-    }
-    if (phase === 'BREATHER') {
-      out.gap = 28;
-      out.pickups.push({ kind: 'boost', lane: pickLane(), z });
+    if (nearGate || phase === 'RUNWAY' || phase === 'BREATHER') {
+      out.gap = 32;
+      coins(C.coinsPerRow, z);
+      if (r.next() < 0.4) out.pickups.push({ kind: 'boost', lane: rec, z: z + 20 });
       return out;
     }
 
-    const density = phase === 'INTRO' ? 0.55 : phase === 'BUILD' ? 0.75 + hard * 0.15 : 0.95 + hard * 0.2;
-    const baseGap = { CALM: 50, TRENDING: 43, VOLATILE: 37, CRASH: 32 }[ctx.regime];
-    out.gap = Math.max(20, (baseGap / density) * r.range(0.85, 1.2) - ctx.lap * 4);
+    const density = phase === 'INTRO' ? 0.6 : phase === 'BUILD' ? 0.85 : 1.05;
+    out.gap = Math.max(22, (C.gap[ctx.regime] / density) * r.range(0.85, 1.2) - ctx.lap * 3);
 
-    const roll = r.next();
-    const two = () => {
-      const a = pickLane();
-      let b = pickLane();
-      while (b === a) b = pickLane();
-      return [a, b] as const;
-    };
-    if (phase === 'PEAK' && roll < 0.12 && z + 120 < ctx.gateZ - 60) {
-      // FORK: a median wall splits the road — choose a route (= choose your spread) and commit to it
-      const len = r.range(70, 100);
-      out.obstacles.push({ kind: 'wall', lane: 1, z: z + len / 2, len });
-      const side = r.next() < 0.5 ? 0 : 2;
-      for (let k = 0; k < 3; k++) out.pickups.push({ kind: 'boost', lane: side as LaneId, z: z + 15 + k * 22 });
-      out.obstacles.push({ kind: 'barrier', lane: (2 - side) as LaneId, z: z + len * 0.55 });
-      out.gap = len + 30;
-      const ok = this.accept(out, ctx);
-      if (ok) this.forks.push({ from: z - 20, to: z + len + 5 });
-      return ok ?? this.fallback(ctx);
-    } else if (roll < 0.22 && phase !== 'INTRO') {
-      // slalom: alternating cars
-      const startLeft = r.next() < 0.5;
-      const n = phase === 'PEAK' ? 3 : 2;
-      for (let k = 0; k < n; k++) out.obstacles.push({ kind: 'car', lane: ((k % 2 === 0) === startLeft ? 0 : 2) as LaneId, z: z + k * 26, speed: 15 });
-      out.obstacles.push({ kind: 'car', lane: 1, z: z + 13, speed: 15 });
-      out.gap = 26 * n + 22;
-    } else if (roll < 0.36) {
-      // ramp over traffic: take the ramp and fly over the car
-      const l = pickLane();
-      out.pickups.push({ kind: 'ramp', lane: l, z });
-      out.obstacles.push({ kind: 'car', lane: l, z: z + 20, speed: 12 });
-      out.gap = 60;
-    } else if (fast && roll < 0.5) {
-      if (ctx.regime === 'CRASH' && r.next() < 0.5) {
-        const [a, b] = two();
-        out.obstacles.push({ kind: 'debris', lane: a, z });
-        if (r.next() < 0.4 + hard * 0.3) out.obstacles.push({ kind: 'debris', lane: b, z: z + 6 });
-      } else {
-        const [a, b] = two();
-        out.obstacles.push({ kind: 'spike', lane: a, z });
-        if (r.next() < 0.35 + hard * 0.35) out.obstacles.push({ kind: 'spike', lane: b, z });
-      }
-    } else if ((fast || phase === 'PEAK') && roll < 0.62) {
-      // oncoming "short seller" — telegraphed by headlights and warning chevrons
-      out.obstacles.push({ kind: 'oncoming', lane: pickLane(), z: z + 60, speed: -16 });
-      out.gap = 55;
-    } else if (roll < 0.82) {
-      const [a, b] = two();
-      const car: Placement = { kind: 'car', lane: a, z, speed: r.range(12, 20) };
-      out.obstacles.push(car);
-      if (r.next() < 0.25 + hard * 0.4) out.obstacles.push({ kind: 'car', lane: b, z: z + r.range(0, 6), speed: car.speed });
-      else if (fast && Math.abs(a - b) === 1 && r.next() < 0.5) {
-        car.changeTo = b;
-        car.changeAt = r.range(32, 48);
-      }
-    } else {
-      const span = (r.next() < 0.25 + hard * 0.3 ? 3 : r.next() < 0.5 ? 2 : 1) as 1 | 2 | 3;
-      out.obstacles.push({ kind: 'barrier', lane: span === 3 ? 1 : span === 2 ? (r.next() < 0.5 ? 0 : 1) : pickLane(), z, span });
-      out.gap = Math.max(out.gap, 34);
+    // recommended lane: coins + (sometimes) a jumpable gimmick
+    coins(C.coinsPerRow, z);
+    if (r.next() < C.gimmickChance) {
+      if (r.next() < 0.6) out.obstacles.push({ kind: 'barrier', lane: rec, z: z + out.gap * 0.55, span: 1 });
+      else out.pickups.push({ kind: 'ramp', lane: rec, z: z + out.gap * 0.45 });
     }
-    if (phase !== 'INTRO' && r.next() < 0.18) out.pickups.push({ kind: 'boost', lane: pickLane(), z: z - out.gap * 0.5 });
-
-    return this.accept(out, ctx) ?? this.fallback(ctx);
-  }
-
-  /** a simple safe pattern when the chosen one would be unfair */
-  private fallback(ctx: SpawnContext) {
-    const z = this.nextZ;
-    for (const lane of [0, 1, 2] as LaneId[]) {
-      const p = { obstacles: [{ kind: 'car' as const, lane, z, speed: 15 }], pickups: [] as PickupPlacement[], gap: 40 };
-      const ok = this.accept(p, ctx);
-      if (ok) return ok;
+    // dangerous lanes: make the wrong decision visibly costly
+    for (const l of dangers) {
+      const u = r.next();
+      if (ctx.regime === 'CRASH' && u < 0.35) out.obstacles.push({ kind: 'debris', lane: l, z });
+      else if (ctx.regime === 'VOLATILE' && u < 0.3) out.obstacles.push({ kind: 'spike', lane: l, z });
+      else if (phase === 'PEAK' && u < 0.45) out.obstacles.push({ kind: 'oncoming', lane: l, z: z + 60, speed: -16 });
+      else out.obstacles.push({ kind: 'warning', lane: l, z });
     }
-    return { obstacles: [], pickups: [], gap: 30 };
+    // remaining (neutral) lanes: light slow traffic in calmer markets, and tempting boosts
+    for (const l of others) {
+      if (dangers.includes(l)) continue;
+      const calm = ctx.regime === 'CALM' || ctx.regime === 'TRENDING';
+      if (calm && r.next() < C.calmTraffic) out.obstacles.push({ kind: 'car', lane: l, z: z + r.range(0, 10), speed: r.range(12, 18) });
+      else if (r.next() < 0.15) out.pickups.push({ kind: 'boost', lane: l, z: z + r.range(0, 10) });
+    }
+    return this.accept(out, ctx) ?? { obstacles: [], pickups: out.pickups.filter((p) => p.kind !== 'ramp'), gap: out.gap };
   }
 
   /** validate all rows of a pattern; commit them if fair */

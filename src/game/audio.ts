@@ -114,6 +114,17 @@ class AudioEngine {
     this.noiseHit(0.5, 0.22, 600, 'bandpass', { sweep: 4000 });
     this.tone(220, 0.4, 'sawtooth', 0.06, { slide: 660 });
   }
+  recLane() {
+    [659, 880, 1175].forEach((n, i) => this.tone(n, 0.16, 'triangle', 0.12, { delay: i * 0.06 }));
+  }
+  coin(combo: number) {
+    this.tone(1320 * Math.pow(2, Math.min(combo, 20) / 40), 0.07, 'square', 0.04);
+  }
+  settle(sweet: boolean) {
+    const notes = sweet ? [523, 659, 784, 1046, 1318] : [523, 784];
+    notes.forEach((n, i) => this.tone(n, 0.18, 'triangle', 0.14, { delay: i * 0.05 }));
+    this.noiseHit(0.4, 0.2, 800, 'bandpass', { sweep: 5000 });
+  }
   land() {
     this.noiseHit(0.1, 0.14, 300, 'lowpass');
   }

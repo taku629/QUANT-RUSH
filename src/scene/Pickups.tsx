@@ -54,6 +54,8 @@ export function Pickups() {
       // lit side rails of the ramp (replace the old per-ramp edge lines)
       edge: new InstanceBatch(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ toneMapped: false }), CAP * 2, true),
       pad: new InstanceBatch(new THREE.PlaneGeometry(3.2, 7), new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), CAP * 2, true),
+      // v3 profit coins in the recommended lane (one draw call)
+      coin: new InstanceBatch(new THREE.CylinderGeometry(0.55, 0.55, 0.14, 16), new THREE.MeshBasicMaterial({ color: '#ffd23d', toneMapped: false }), 96),
     }),
     [tex],
   );
@@ -69,6 +71,10 @@ export function Pickups() {
         if (ahead < -12 || ahead > 250) continue;
         const z = -ahead;
         const k = p.used ? 0.25 : 0.9;
+        if (p.kind === 'coin') {
+          if (!p.used) b.coin.add(null, p.x, 1.1 + Math.sin(env.time * 4 + p.z) * 0.15, z, 1, 1, 1, Math.PI / 2, env.time * 3 + p.z, 0);
+          continue;
+        }
         if (p.kind === 'ramp') {
           b.ramp.add(null, p.x, 0, z);
           for (const sx of [-1.6, 1.6]) b.edge.add(null, p.x + sx, 0.55, z, 0.1, 0.1, 5.1, PAD_SLOPE, 0, 0, edgeCol);

@@ -406,3 +406,20 @@ button { font-family: var(--display); cursor: pointer; color: inherit; touch-act
 .fps { position: fixed; left: max(4px, env(safe-area-inset-left)); bottom: auto; top: max(2px, env(safe-area-inset-top)); transform: none; z-index: 50; pointer-events: none; font: 600 10px/1.3 ui-monospace, Menlo, monospace; padding: 1px 5px; background: rgba(0,0,0,0.55); color: #9f9; border-radius: 3px; }
 .fps.mid { color: #ffd23d; }
 .fps.bad { color: #ff5a6e; }
+
+/* ---------- v3: RISK gauge (replaces inventory / VaR readouts) ---------- */
+.risk-gauge { position: absolute; left: 50%; bottom: max(84px, calc(env(safe-area-inset-bottom) + 74px)); transform: translateX(-50%); width: min(360px, 62vw); padding: 6px 10px; background: rgba(5,3,20,0.55); border: 1px solid var(--line); border-radius: 8px; backdrop-filter: blur(4px); }
+.rg-top { display: flex; align-items: baseline; gap: 8px; }
+.rg-label { font-family: var(--display); font-size: 11px; letter-spacing: 0.3em; color: #aab4ff; }
+.rg-top b { font-family: var(--display); font-size: 24px; line-height: 1; font-variant-numeric: tabular-nums; text-shadow: 0 0 12px currentColor; }
+.rg-call { margin-left: auto; font-style: normal; font-family: var(--display); font-weight: 900; font-size: 15px; color: #ffd23d; letter-spacing: 0.1em; animation: blink .4s steps(2) infinite; }
+.rg-bar { position: relative; height: 12px; margin-top: 4px; background: rgba(255,255,255,0.08); border-radius: 6px; overflow: hidden; }
+.rg-fill { height: 100%; border-radius: 6px; transition: width .12s linear, background .2s; }
+.rg-gate { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; opacity: 0.7; }
+.rg-sweet { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(255,210,61,0.25) 0 4px, transparent 4px 8px); pointer-events: none; }
+.risk-gauge.warn { border-color: #ffb03d; box-shadow: 0 0 18px rgba(255,176,61,0.35); }
+.risk-gauge.danger { border-color: #ff2a4d; box-shadow: 0 0 24px rgba(255,42,77,0.5); animation: siren 0.5s infinite; }
+.lane-chip.rec { opacity: 1; border-color: #ffd23d; box-shadow: 0 0 14px rgba(255,210,61,0.6); }
+.lane-chip.rec::after { content: '★'; position: absolute; top: -12px; left: 50%; transform: translateX(-50%); color: #ffd23d; font-size: 12px; }
+.lane-chip { position: relative; }
+@media (max-width: 760px) { .risk-gauge { bottom: max(124px, calc(env(safe-area-inset-bottom) + 114px)); width: 70vw; } .rg-top b { font-size: 20px; } }

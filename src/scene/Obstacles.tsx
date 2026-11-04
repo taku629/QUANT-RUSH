@@ -52,6 +52,9 @@ const C = {
   foot: new THREE.Color('#ff2040'),
   tmp: new THREE.Color(),
   tmp2: new THREE.Color(),
+  warnRed: new THREE.Color('#ff2a3d').multiplyScalar(1.4),
+  warnDark: new THREE.Color('#a8101e'),
+  white: new THREE.Color('#ffffff'),
 };
 
 const additive = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false } as const;
@@ -137,6 +140,15 @@ export function Obstacles() {
               b.warn.add(objM, 0, 0.06, 0, k, k, k, -Math.PI / 2, 0, 0);
             }
             break;
+          case 'warning': {
+            // red/white striped barricade = "this lane is dangerous in this market"
+            b.glow.add(objM, -1.55, 1.3, 0, 0.25, 2.6, 0.25, 0, 0, 0, C.foot);
+            b.glow.add(objM, 1.55, 1.3, 0, 0.25, 2.6, 0.25, 0, 0, 0, C.foot);
+            b.glow.add(objM, 0, 1.6, 0, 3.4, 1.6, 0.18, 0, 0, 0, blink ? C.warnRed : C.warnDark);
+            for (let k = -1; k <= 1; k++) b.glow.add(objM, k * 1.05, 1.6, 0.1, 0.32, 1.7, 0.05, 0, 0, 0.6, C.white);
+            b.glow.add(objM, 0, 2.75, 0, 3.6, 0.2, 0.3, 0, 0, 0, C.warnRed);
+            break;
+          }
           case 'wall': {
             const wc = C.tmp2.copy(env.primary).lerp(env.secondary, 0.5 + Math.sin(env.time * 4) * 0.5);
             b.wall.add(objM, 0, 1.2, 0, o.w, o.h, o.len, 0, 0, 0, wc);

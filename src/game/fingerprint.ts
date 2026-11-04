@@ -69,6 +69,13 @@ export function fingerprint(s: GameSession): Fingerprint {
     distance: r6(s.z),
     endReason: s.endReason ?? 'RUNNING',
     score: score.total,
+    // v3 rules: recommended lane, RISK gauge, settlements
+    recChanges: s.advisor.changes,
+    coins: s.coins,
+    settlements: s.settlements,
+    settlePoints: s.settlePoints,
+    riskBursts: s.riskBursts,
+    maxRisk: r6(s.maxRisk),
   };
 }
 

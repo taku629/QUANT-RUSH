@@ -31,10 +31,10 @@ export function Gates() {
     const k = `${g.district}`;
     if (key.current !== k && banner.current) {
       key.current = k;
-      banner.current.map = gateTexture(d.name, d.jp, g.final ? 'GOAL · RISK CHECK |INVENTORY| ≤ 500' : `RISK CHECK |INVENTORY| ≤ ${GAME_RULES.gateInventoryLimit} → +TIME`, d.primary);
+      banner.current.map = gateTexture(d.name, d.jp, g.final ? `GOAL · RISK CHECK < ${Math.round(GAME_RULES.gateRiskMax * 100)}%` : `RISK CHECK  RISK < ${Math.round(GAME_RULES.gateRiskMax * 100)}% → +TIME`, d.primary);
       banner.current.needsUpdate = true;
     }
-    const pass = Math.abs(s.engine.inventory) <= GAME_RULES.gateInventoryLimit;
+    const pass = s.risk < GAME_RULES.gateRiskMax;
     if (curtain.current) {
       curtain.current.color.copy(pass ? ok : bad);
       curtain.current.opacity = 0.12 + Math.sin(env.time * 6) * 0.05;

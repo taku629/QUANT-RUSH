@@ -129,6 +129,29 @@ export function Player({ vehicle, showRider }: { vehicle: VehicleId; showRider: 
   const glowTex = useMemo(() => glowTexture(), []);
   const streakTex = useMemo(() => streakTexture(), []);
   const ringColor = useMemo(() => new THREE.Color(), []);
+  // v3 RISK ring: an arc around the vehicle that fills 0→100 % (green → amber → red)
+  const riskMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        uniforms: { uFill: { value: 0 }, uColor: { value: new THREE.Color('#3dff8b') }, uPulse: { value: 0 } },
+        vertexShader: `varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        fragmentShader: `uniform float uFill; uniform vec3 uColor; uniform float uPulse; varying vec2 vP;
+          void main(){
+            float a = atan(vP.x, vP.y) / 6.2831853 + 0.5; // 0..1 around the ring, starting at the front
+            float on = step(a, uFill);
+            vec3 c = mix(vec3(0.12), uColor * (1.4 + uPulse), on);
+            gl_FragColor = vec4(c, mix(0.25, 0.95, on));
+          }`,
+      }),
+    [],
+  );
+  const riskRing = useRef<THREE.Mesh>(null);
+  const GREEN = useMemo(() => new THREE.Color('#3dff8b'), []);
+  const AMBER = useMemo(() => new THREE.Color('#ffb03d'), []);
+  const REDC = useMemo(() => new THREE.Color('#ff2a4d'), []);
 
   // bake the vehicle + rider parts into 1–2 meshes (≈20 draw calls → 2)
   useLayoutEffect(() => {
@@ -157,6 +180,12 @@ export function Player({ vehicle, showRider }: { vehicle: VehicleId; showRider: 
       ringColor.set(LANE_COLORS[lane]);
       ringMat.current.color.copy(ringColor).multiplyScalar(1.5);
       ringMat.current.opacity = s.stumble > 0 ? 0.08 : 0.55 + Math.sin(t * 8) * 0.15;
+    }
+    if (riskRing.current) {
+      const r = s.risk;
+      riskMat.uniforms.uFill.value += (r - riskMat.uniforms.uFill.value) * Math.min(1, dt * 10);
+      (riskMat.uniforms.uColor.value as THREE.Color).copy(r >= 0.9 ? REDC : r >= 0.7 ? AMBER : GREEN);
+      riskMat.uniforms.uPulse.value = r >= 0.7 ? 0.6 + Math.sin(t * 16) * 0.6 : 0;
     }
     if (aura.current) {
       aura.current.visible = s.alpha > 0;
@@ -188,6 +217,10 @@ export function Player({ vehicle, showRider }: { vehicle: VehicleId; showRider: 
       <mesh ref={ring} rotation-x={-Math.PI / 2} position={[0, 0.05, 0]}>
         <ringGeometry args={[0.92, 1, 48]} />
         <meshBasicMaterial ref={ringMat} transparent blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
+      </mesh>
+      {/* RISK ring (v3): fills clockwise from the front */}
+      <mesh ref={riskRing} rotation-x={-Math.PI / 2} position={[0, 0.07, 0]} material={riskMat}>
+        <ringGeometry args={[1.95, 2.25, 64]} />
       </mesh>
       {/* speed trails */}
       {[-0.4, 0.4].map((x, i) => (

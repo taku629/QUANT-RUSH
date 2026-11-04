@@ -3,6 +3,7 @@ import { audio } from '../game/audio';
 import { DISTRICTS, LANE_COLORS, LANE_NAMES, REGIME_STYLE } from '../game/content';
 import { input } from '../game/input';
 import { GAME_RULES } from '../game/session';
+import { BALANCE } from '../game/gameBalanceConfig';
 import { laneSpreadLabel, useGame, type Hud as HudT } from '../game/store';
 import { FLOW_READ_INFO } from '../sim/signals';
 import type { LaneId } from '../sim/config';
@@ -27,8 +28,8 @@ export function Hud() {
           <small>×{hud.mult.toFixed(2)}</small>
         </div>
       )}
-      <Inventory hud={hud} />
-      <Lanes lane={hud.lane} offline={hud.offline} fork={hud.fork} />
+      <RiskGauge hud={hud} />
+      <Lanes lane={hud.lane} rec={hud.recLane} offline={hud.offline} fork={hud.fork} />
       <Actions hud={hud} />
       <NewsBanner />
       <Popups />
@@ -143,38 +144,36 @@ function Tape({ hud }: { hud: HudT }) {
   );
 }
 
-function Inventory({ hud }: { hud: HudT }) {
-  const invFrac = hud.inventory / hud.limit;
-  const risk = Math.min(1, hud.var95 / 160);
-  const gateLimitFrac = GAME_RULES.gateInventoryLimit / hud.limit;
+/**
+ * v3 RISK gauge: one number instead of inventory / VaR panels.
+ * Green → amber → red. In the amber "sweet spot" HEDGE pays the biggest settlement bonus; 100 % = forced liquidation.
+ */
+function RiskGauge({ hud }: { hud: HudT }) {
+  const pct = Math.round(hud.risk * 100);
+  const warn = hud.risk >= BALANCE.risk.warnAt;
+  const gate = GAME_RULES.gateRiskMax * 100;
+  const col = hud.risk >= 0.9 ? '#ff2a4d' : warn ? '#ffb03d' : '#3dff8b';
   return (
-    <div className="hud-inv">
-      <div className="lbl">
-        INVENTORY <b className={hud.inventory > 0 ? 'up' : hud.inventory < 0 ? 'down' : ''} data-testid="inventory">{hud.inventory > 0 ? '+' : ''}{hud.inventory}</b>
-        <small>/ ±{hud.limit}</small>
+    <div className={`risk-gauge ${warn ? 'warn' : ''} ${hud.risk >= 0.9 ? 'danger' : ''}`} data-testid="risk">
+      <div className="rg-top">
+        <span className="rg-label">RISK</span>
+        <b style={{ color: col }}>{pct}%</b>
+        {warn && <em className="rg-call">HEDGE!</em>}
       </div>
-      <div className="inv-bar">
-        <div className="gate-zone" style={{ left: `${50 - gateLimitFrac * 50}%`, width: `${gateLimitFrac * 100}%` }} />
-        <div className="mid-line" />
-        <div className={`inv-fill ${invFrac >= 0 ? 'long' : 'short'}`} style={invFrac >= 0 ? { left: '50%', width: `${invFrac * 50}%` } : { right: '50%', width: `${-invFrac * 50}%` }} />
+      <div className="rg-bar">
+        <div className="rg-fill" style={{ width: `${pct}%`, background: col }} />
+        <i className="rg-gate" style={{ left: `${gate}%` }} title="gate check" />
+        <i className="rg-sweet" style={{ left: `${BALANCE.risk.warnAt * 100}%`, width: `${100 - BALANCE.risk.warnAt * 100}%` }} />
       </div>
-      <div className="lbl small" title="1秒VaR95：現在の在庫と直近の実現ボラから見た、1秒間の損失の95%上限の目安">
-        RISK <span className="var">1s VaR95 ${hud.var95.toFixed(0)}</span>
-      </div>
-      <div className="risk-bar">
-        <div style={{ width: `${risk * 100}%`, background: risk > 0.7 ? '#ff2a4d' : risk > 0.4 ? '#ffb03d' : '#3dff8b' }} />
-      </div>
-      {Math.abs(hud.inventory) >= hud.limit && <div className="warn-tag">POSITION LIMIT</div>}
-      {Math.abs(hud.inventory) > GAME_RULES.gateInventoryLimit && <div className="warn-tag amber">GATE ✕ — HEDGE</div>}
     </div>
   );
 }
 
-const Lanes = memo(function Lanes({ lane, offline, fork }: { lane: LaneId; offline: boolean; fork: boolean }) {
+const Lanes = memo(function Lanes({ lane, rec, offline, fork }: { lane: LaneId; rec: LaneId; offline: boolean; fork: boolean }) {
   return (
     <div className="hud-lanes">
       {([0, 1, 2] as LaneId[]).map((l) => (
-        <div key={l} className={`lane-chip ${lane === l ? 'on' : ''}`} style={{ ['--lc' as string]: LANE_COLORS[l] }}>
+        <div key={l} className={`lane-chip ${lane === l ? 'on' : ''} ${rec === l ? 'rec' : ''}`} style={{ ['--lc' as string]: LANE_COLORS[l] }}>
           <b>{laneSpreadLabel(l)}</b>
           <span>{LANE_NAMES[l]}</span>
         </div>

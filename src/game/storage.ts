@@ -24,7 +24,8 @@ export type Settings = {
 export type Records = { bestScore: number; bestPnL: number; maxSpeed: number; maxCombo: number; bestDistance: number; plays: number };
 
 const SKEY = 'quantrush.settings.v1';
-const RKEY = 'quantrush.records.v1';
+// v3 scoring differs from v2, so best scores start fresh (settings are kept)
+const RKEY = 'quantrush.v3_records';
 
 const isMobile = () => typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches ?? false);
 

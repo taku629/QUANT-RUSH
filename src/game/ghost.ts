@@ -7,8 +7,9 @@ import type { GameSession } from './session';
 export type GhostTrack = { seed: number; score: number; pnl: number; vehicle: string; dt: number; x: number[]; y: number[]; z: number[]; date: string };
 export type Attempt = { score: number; pnl: number; rar: number; distance: number; date: string };
 
-const GKEY = (seed: number) => `quantrush.ghost.${seed}`;
-const HKEY = (seed: number) => `quantrush.seedhist.${seed}`;
+// v3: storage keys are versioned — v2 ghosts/seed history (different rules) are ignored, not mixed in
+const GKEY = (seed: number) => `quantrush.v3_ghost.${seed}`;
+const HKEY = (seed: number) => `quantrush.v3_seedhist.${seed}`;
 const SAMPLE = 0.1;
 
 function read<T>(k: string): T | null {

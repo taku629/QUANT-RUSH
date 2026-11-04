@@ -9,12 +9,11 @@ export type Tip = { id: string; title: string; body: string; tone: 'info' | 'war
 type Step = { id: string; title: string; body: string; done: (s: GameSession, t: number) => boolean };
 
 export const TUTORIAL: Step[] = [
-  { id: 'steer', title: '← → / スワイプでレーン移動', body: '障害物をよけながら走ろう', done: (s, t) => s.laneChanges >= 2 || t > 7 },
-  { id: 'lane', title: 'レーン = あなたのスプレッド', body: '左 ±2¢：約定しやすいが1回の利益は小さい / 右 ±10¢：約定は減るが利益大', done: (_, t) => t > 5 },
-  { id: 'orders', title: '光の玉 = 他の投資家の注文', body: '緑=買い 赤=売り。リングの数が足りるレーンにいれば約定（左:1個〜 右:3個）', done: (s, t) => (s.engine.fills.length >= 2 && t > 3) || t > 8 },
-  { id: 'jump', title: '↑ / 上スワイプでジャンプ', body: '低いバリアは飛び越えられる。ランプに乗れば大ジャンプ', done: (s, t) => s.jumps + s.ramps >= 1 || t > 9 },
-  { id: 'hedge', title: '在庫が偏ったら SPACE / HEDGE', body: '在庫は価格変動リスク。ヘッジでゼロに戻せる（手数料あり・3秒待ち）', done: (s, t) => s.engine.hedges.length >= 1 || t > 7 },
-  { id: 'gate', title: `ゲートで |在庫| ≤ ${GAME_RULES.gateInventoryLimit} なら時間延長！`, body: 'ニアミスでALPHAゲージを溜めて SHIFT / ↓ / 下スワイプ。さあ、本番！', done: (_, t) => t > 5 },
+  { id: 'glow', title: '光っている道を走ろう', body: '金色に光るレーン = 今いちばん儲かるスプレッド。← → / スワイプで移動', done: (s, t) => (s.quoteLane === s.advisor.lane && t > 2.5) || t > 7 },
+  { id: 'coins', title: 'コインを集めて、注文を受けよう', body: '光るレーンにはコインが並ぶ。危険なレーンには警告バリアが出る', done: (s, t) => s.coins >= 3 || t > 7 },
+  { id: 'jump', title: '↑ / 上スワイプでジャンプ', body: '光るレーンの低いバリアはジャンプで越えられる。ランプで大ジャンプ', done: (s, t) => s.jumps + s.ramps >= 1 || t > 9 },
+  { id: 'risk', title: 'RISKゲージが溜まったら HEDGE', body: '稼ぐほど在庫リスクが溜まる。100%前に SPACE / HEDGE で精算ボーナス！ 100%で強制決済', done: (s, t) => s.engine.hedges.length >= 1 || t > 8 },
+  { id: 'gate', title: `ゲートは RISK ${Math.round(GAME_RULES.gateRiskMax * 100)}% 未満で通過！`, body: '通過で時間延長。ニアミスでALPHAゲージ → SHIFT / ↓ / 下スワイプ。さあ、本番！', done: (_, t) => t > 5 },
 ];
 
 export class Tutorial {
@@ -53,12 +52,11 @@ export class Coach {
     if (this.cooldown > 0 || s.t < 3) return null;
     const e = s.engine;
     const sig = e.signals();
-    const inv = e.inventory;
     const g = s.nextGate;
     const cands: Tip[] = [];
-    if (Math.abs(inv) >= 600) cands.push({ id: 'inv', tone: 'warn', title: '在庫が偏っている！', body: 'HEDGE で在庫をゼロに戻すと価格変動リスクが消える（コストと引き換え）' });
-    if (g && g.z - s.z < 220 && g.z - s.z > 80 && Math.abs(inv) > GAME_RULES.gateInventoryLimit)
-      cands.push({ id: 'gate', tone: 'warn', title: 'ゲートが近い：在庫チェック', body: `|在庫| ≤ ${GAME_RULES.gateInventoryLimit} で通過すると時間延長が大きい` });
+    if (s.risk >= 0.7) cands.push({ id: 'inv', tone: 'warn', title: 'RISK が高い！ 今 HEDGE で精算ボーナス', body: '100% になると強制決済（手数料が割高）。ギリギリで精算するほどボーナスが大きい' });
+    if (g && g.z - s.z < 220 && g.z - s.z > 80 && s.risk >= GAME_RULES.gateRiskMax)
+      cands.push({ id: 'gate', tone: 'warn', title: 'ゲートが近い：RISK チェック', body: `RISK ${Math.round(GAME_RULES.gateRiskMax * 100)}% 未満で通過すると時間延長が大きい` });
     if (sig.read === 'ONE_SIDED') cands.push({ id: 'onesided', tone: 'warn', title: '注文が一方向に偏っている', body: '理由のない偏り＋同じ向きの値動きは「情報を持つ相手」のサイン。右へ（広いスプレッド）' });
     if (sig.read === 'ANNOUNCED') cands.push({ id: 'sweep', tone: 'info', title: '公表済みの大口フロー', body: '理由が公表された強制売買は一時的に価格を押すだけ。急いでヘッジしなくてよい' });
     if (sig.read === 'RUSH') cands.push({ id: 'rush', tone: 'good', title: '小口注文が殺到', body: 'リングの少ない注文がたくさん。左（狭いスプレッド）で回転を稼ぐチャンス' });

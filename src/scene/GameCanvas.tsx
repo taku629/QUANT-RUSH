@@ -19,6 +19,7 @@ import { Pickups } from './Pickups';
 import { Player } from './Player';
 import { effectiveSpec, useTier, type Tier, type TierSpec } from './quality';
 import { Road } from './Road';
+import { LaneGuide } from './LaneGuide';
 import { Sky } from './Sky';
 import { Ghost } from './Ghost';
 import { Districts } from './Districts';
@@ -160,6 +161,7 @@ export function GameCanvas({ onContextLost }: { onContextLost: () => void }) {
         <Lights />
         <Sky />
         <Road />
+        <LaneGuide />
         <City density={spec.city} fastFacade={spec.fastFacade} />
         <Districts density={spec.city} />
         {tier !== 'low' && <Skyline />}

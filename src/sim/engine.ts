@@ -25,6 +25,11 @@ export type Action = {
   quoting?: boolean;
   /** liquidity-incentive program active (ALPHA DRIVE): maker rebate on fills + hedge exchange fee waived */
   rebate?: boolean;
+  /**
+   * Forced liquidation ("RISK BURST"): flatten now, ignoring the hedge cooldown, paying this extra cost per share
+   * on top of the normal hedge cost. Booked as hedge cost (real money), so PnL accounting stays exact.
+   */
+  forceFlatten?: number;
 };
 
 export type MissReason = 'PRICE' | 'QUEUE' | 'LIMIT' | 'OFFLINE' | 'ROUTE';
@@ -60,6 +65,8 @@ export type HedgeRecord = {
   cost: number;
   regime: RegimeId;
   inventoryBefore: number;
+  /** true when this was a forced liquidation */
+  forced?: boolean;
 };
 
 export type StepEvents = {
@@ -220,7 +227,9 @@ export class MarketMakerEngine {
     const m = this.tape.mid[t];
     const regime = this.regime;
     const quoting = action.quoting !== false;
-    this.actions.push({ lane: action.lane, hedge: action.hedge, quoting, rebate: !!action.rebate });
+    const rec: Action = { lane: action.lane, hedge: action.hedge, quoting, rebate: !!action.rebate };
+    if (action.forceFlatten !== undefined) rec.forceFlatten = action.forceFlatten;
+    this.actions.push(rec);
     this.lane = action.lane;
     this.laneTicks[regime][action.lane]++;
 
@@ -230,14 +239,16 @@ export class MarketMakerEngine {
     while (this.newsCursor < this.tape.news.length && this.tape.news[this.newsCursor].tick <= t) ev.news.push(this.tape.news[this.newsCursor++]);
 
     // 1) hedge: flatten inventory at mid ± cost (crossing the market's spread + fees)
-    if (action.hedge) {
+    const forced = action.forceFlatten !== undefined && this.inventory !== 0;
+    if (action.hedge || forced) {
       if (this.inventory === 0) ev.hedgeRejected = 'FLAT';
-      else if (t < this.hedgeReadyTick) ev.hedgeRejected = 'COOLDOWN';
+      else if (t < this.hedgeReadyTick && !forced) ev.hedgeRejected = 'COOLDOWN';
       else {
         const q = -this.inventory;
-        const c = this.hedgeCostPerShare(regime, !!action.rebate);
+        const c = this.hedgeCostPerShare(regime, !!action.rebate) + (forced ? action.forceFlatten! : 0);
         const price = q > 0 ? m + c : m - c;
         const rec: HedgeRecord = { tick: t, qty: q, price, mid: m, costPerShare: c, cost: Math.abs(q) * c, regime, inventoryBefore: this.inventory };
+        if (forced) rec.forced = true;
         this.cash -= q * price;
         this.inventory += q;
         this.hedgeCost += rec.cost;

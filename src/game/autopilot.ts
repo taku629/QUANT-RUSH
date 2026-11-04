@@ -25,7 +25,9 @@ export function autopilot(s: GameSession, frame: number, preferred?: LaneId): In
   const wall = s.obstacles.some((o) => o.alive && o.kind === 'barrier' && !o.passed && Math.abs(o.x - s.x) < o.w / 2 + 0.6 && o.z - s.z > 3 && o.z - s.z < 3 + s.speed * 0.16);
   if (wall) inp.jump = true;
   const regime = s.engine.regime;
-  const pref: LaneId = preferred ?? (regime === 'CALM' ? 0 : regime === 'TRENDING' ? 1 : 2);
+  // v3: follow the glowing recommended lane unless a caller (e.g. a Quant Lab strategy) asks otherwise
+  const pref: LaneId = preferred ?? s.advisor.lane;
+  void regime;
   const cur = s.targetLane;
   const safe = 1.1;
   const c = [0, 1, 2].map((l) => timeToHazard(s, l as LaneId));
@@ -38,7 +40,8 @@ export function autopilot(s: GameSession, frame: number, preferred?: LaneId): In
   }
   if (target < cur) inp.left = 1;
   else if (target > cur) inp.right = 1;
-  if (Math.abs(s.engine.inventory) > 450 && frame % 20 === 0) inp.hedge = true;
+  // v3: settle in the RISK sweet spot (≥ 75 %) before the gauge bursts
+  if (s.risk >= 0.75 && frame % 20 === 0) inp.hedge = true;
   if (s.alphaReady) inp.alpha = true;
   return inp;
 }

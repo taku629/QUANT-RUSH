@@ -8,7 +8,7 @@ import type { TimelinePoint } from '../sim/engine';
 import { audio } from './audio';
 import { fx } from './fx';
 import { input } from './input';
-import { GameSession, type EndReason, type FxEvent } from './session';
+import { GameSession, GAME_RULES, type EndReason, type FxEvent } from './session';
 import { DISTRICTS, LANE_COLORS, REGIME_STYLE } from './content';
 import { loadRecords, loadSettings, saveRecords, saveSettings, type Records, type Settings } from './storage';
 import { Coach, Tutorial, TUTORIAL, type Tip } from './coach';
@@ -53,6 +53,10 @@ export type Hud = {
   boost: boolean;
   fork: boolean;
   ghostAhead: number | null;
+  /** v3 */
+  risk: number;
+  recLane: LaneId;
+  danger: number;
 };
 
 export type Popup = { id: number; text: string; sub?: string; color: string; size: 'sm' | 'md' | 'lg' | 'xl'; x: number; y: number };
@@ -350,6 +354,9 @@ export const useGame = create<Store>((set, get) => ({
         boost: s.boost > 0,
         fork: s.besideWall(),
         ghostAhead: gp ? gp.z - s.z : null,
+        risk: s.risk,
+        recLane: s.advisor.lane,
+        danger: s.advisor.danger,
       },
     });
   },
@@ -399,7 +406,7 @@ export function dispatchEvents(events: FxEvent[]) {
         fx.flash = 0.4;
         fx.flashColor = '#00f0ff';
         fx.burst({ color: '#00f0ff', count: 60, speed: 14, life: 0.9 });
-        st.popup({ text: `HEDGED ${ev.qty > 0 ? '+' : ''}${ev.qty}`, sub: `cost −$${ev.cost.toFixed(2)}`, color: '#00f0ff', size: 'lg', y: 36 });
+        // the SETTLED popup (with bonus) follows from the 'settle' event
         break;
       case 'hedgeRejected':
         audio.denied();
@@ -442,6 +449,33 @@ export function dispatchEvents(events: FxEvent[]) {
         fx.fovKick = Math.min(12, fx.fovKick + 5);
         fx.burst({ color: '#ffd23d', count: 24, speed: 6, life: 0.5, y: 0.3, z: 1 });
         break;
+      case 'recLane': {
+        // the glowing lane moved: big, readable cue (colour + arrow), not a paragraph
+        audio.recLane();
+        fx.flash = Math.max(fx.flash, 0.25);
+        fx.flashColor = LANE_COLORS[ev.lane];
+        st.popup({ text: ['◀◀ LEFT', '▲ CENTER', 'RIGHT ▶▶'][ev.lane], sub: ['AGGRESSIVE ±2¢', 'BALANCED ±5¢', 'DEFENSIVE ±10¢'][ev.lane] + ' が有利', color: LANE_COLORS[ev.lane], size: 'xl', y: 30 });
+        break;
+      }
+      case 'coin':
+        audio.coin(s?.combo ?? 0);
+        fx.burst({ x: ev.x * 0.15 + (s?.x ?? 0) * 0.85, y: 1.2, z: 0, color: '#ffd23d', count: 6, speed: 3, life: 0.35 });
+        break;
+      case 'settle':
+        audio.settle(ev.sweet);
+        fx.burst({ color: ev.sweet ? '#ffd23d' : '#00f0ff', count: ev.sweet ? 90 : 40, speed: 12, life: 0.9 });
+        st.popup({ text: (ev.sweet ? 'PERFECT ' : '') + 'SETTLED ' + Math.round(ev.risk * 100) + '%', sub: '+' + ev.points.toLocaleString() + ' pts · hedge cost −$' + ev.cost.toFixed(2), color: ev.sweet ? '#ffd23d' : '#00f0ff', size: 'lg', y: 40 });
+        break;
+      case 'riskBurst':
+        audio.hit();
+        fx.shake = Math.max(fx.shake, 0.7);
+        fx.flash = 0.6;
+        fx.flashColor = '#ff2a4d';
+        st.popup({ text: 'RISK BURST!', sub: '強制決済 ' + Math.abs(ev.qty) + '株 · −$' + ev.cost.toFixed(2), color: '#ff2a4d', size: 'xl', y: 34 });
+        break;
+      case 'clear':
+        fx.burst({ x: ev.x * 0.5, y: 1.5, z: -(ev.z - (s?.z ?? 0)), color: '#ffffff', count: 14, speed: 6, life: 0.5 });
+        break;
       case 'bump':
         audio.denied();
         st.popup({ text: 'ROUTE LOCKED', sub: '分岐中は中央の壁を越えられない', color: '#8892b0', size: 'sm', y: 64 });
@@ -469,7 +503,7 @@ export function dispatchEvents(events: FxEvent[]) {
         const d = DISTRICTS[ev.district % DISTRICTS.length];
         st.popup({
           text: ev.passed ? `RISK CHECK PASSED +${ev.bonus}s` : `RISK CHECK FAILED +${ev.bonus}s`,
-          sub: ev.passed ? `${d.name} SETTLED · inventory ${ev.inventory}` : `在庫 ${ev.inventory} 株 — 上限 ±500 を超過`,
+          sub: ev.passed ? d.name + ' SETTLED' : 'RISK が ' + Math.round(GAME_RULES.gateRiskMax * 100) + '% 以上 — HEDGE してから通過しよう',
           color: ev.passed ? '#3dff8b' : '#ffb03d',
           size: 'xl',
           y: 26,
@@ -494,6 +528,10 @@ export function dispatchEvents(events: FxEvent[]) {
           fx.shake = 0.8;
           fx.flash = 0.7;
           fx.flashColor = '#ff0030';
+        } else if (s && s.t > 0.2) {
+          // every regime change washes the screen in the regime colour
+          fx.flash = Math.max(fx.flash, 0.4);
+          fx.flashColor = REGIME_STYLE[ev.regime].color;
         }
         if (ev.regime === 'VOLATILE') fx.lightning = 1;
         useGame.setState({ news: { id: ++newsId, text: ev.text, regime: ev.regime } });

@@ -1,6 +1,7 @@
 import { LANES } from '../sim/config';
 import { LANE_COLORS } from '../game/content';
 import { GAME_RULES } from '../game/session';
+import { BALANCE } from '../game/gameBalanceConfig';
 
 export function HowTo({ onClose }: { onClose: () => void }) {
   return (
@@ -18,6 +19,14 @@ export function HowTo({ onClose }: { onClose: () => void }) {
               <tr><td>C / P・ESC</td><td>カメラ切替（標準 / 迫力 / 一人称）/ ポーズ</td></tr>
             </tbody>
           </table>
+        </section>
+        <section>
+          <h3>まずはこれだけ（v3）</h3>
+          <ul>
+            <li><b>金色に光るレーン</b>（矢印つき）が、いまの相場でおすすめのレーン。ここを走ればコインが取れ、約定の得点も ×{BALANCE.score.recLaneMul}。</li>
+            <li>赤白の<b>警告バリケード</b>と赤い斜線は「この相場ではそのレーンが危険」の合図。光るレーンにある低いバリアはジャンプで越えられます。</li>
+            <li><b>RISK ゲージ</b>（0〜100%）は在庫の危なさ。{Math.round(BALANCE.risk.warnAt * 100)}% を超えて「HEDGE!」が出たら SPACE で決済 — ギリギリで決済するほどボーナスが大きい。100% のまま放置すると強制決済（ペナルティ）。</li>
+          </ul>
         </section>
         <section>
           <h3>あなたはマーケットメイカー</h3>
@@ -45,9 +54,8 @@ export function HowTo({ onClose }: { onClose: () => void }) {
           <h3>走行とリスク管理</h3>
           <ul>
             <li><b>BLOCK 注文</b>（六角形のゲート）は大口注文。そのレーンを通った時だけ約定し、在庫が一気に偏ります。</li>
-            <li><b>分岐</b>では中央の壁を越えられません。ルート選び＝スプレッド選びです。</li>
             <li>ランプで大ジャンプ、黄色い矢印でブースト。ヘッドライトと赤い矢印は<b>対向車</b>の警告。</li>
-            <li>各地区の終点 <b>SETTLEMENT GATE</b>：|在庫| ≤ {GAME_RULES.gateInventoryLimit} なら大きく時間延長（先の地区ほど少なめ）、超過なら +{GAME_RULES.gateFailBonus}秒のみ。</li>
+            <li>各地区の終点 <b>SETTLEMENT GATE</b>：<b>RISK {Math.round(GAME_RULES.gateRiskMax * 100)}% 未満</b>なら大きく時間延長（先の地区ほど少なめ）、超過なら +{GAME_RULES.gateFailBonus}秒のみ。</li>
             <li>衝突すると転倒して約 {GAME_RULES.offlineTime} 秒<b>クォート停止</b>（約定できない）。耐久ゼロで KNOCKOUT、PnL −$3,000 で STOPPED OUT。</li>
           </ul>
         </section>
