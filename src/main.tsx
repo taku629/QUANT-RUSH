@@ -4,9 +4,10 @@ import { App } from './App';
 import './styles.css';
 import { runtime, useGame } from './game/store';
 import { autopilot } from './game/autopilot';
+import { fx } from './game/fx';
 
 // test / debugging hook (used by the Playwright smoke test)
-(window as unknown as { __QUANT_RUSH__: unknown }).__QUANT_RUSH__ = { runtime, useGame, autopilot };
+(window as unknown as { __QUANT_RUSH__: unknown }).__QUANT_RUSH__ = { runtime, useGame, autopilot, fx };
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
