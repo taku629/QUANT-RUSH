@@ -401,3 +401,8 @@ button { font-family: var(--display); cursor: pointer; color: inherit; touch-act
 .pnl-val, .time, .speed b, .hud-inv .lbl b { -webkit-text-stroke: 0.6px rgba(0,0,0,0.55); }
 .hud-pnl, .hud-right { text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
 @media (max-width: 760px) { .district-card { top: 24%; } }
+
+/* ---------- v3: dev FPS counter (top-left corner, tiny, never captures input) ---------- */
+.fps { position: fixed; left: max(4px, env(safe-area-inset-left)); bottom: auto; top: max(2px, env(safe-area-inset-top)); transform: none; z-index: 50; pointer-events: none; font: 600 10px/1.3 ui-monospace, Menlo, monospace; padding: 1px 5px; background: rgba(0,0,0,0.55); color: #9f9; border-radius: 3px; }
+.fps.mid { color: #ffd23d; }
+.fps.bad { color: #ff5a6e; }

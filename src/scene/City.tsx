@@ -2,16 +2,17 @@ import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { DISTRICTS, REGIME_STYLE } from '../game/content';
-import { createTicker, signTexture } from './textures';
+import { createTicker } from './textures';
+import { makeSignMaterial, signAtlas } from './signAtlas';
 import { makeFacadeMaterial } from './facades';
-import type { Tier } from './quality';
 import { LANDMARK_PLAZA, landmarkZ, sceneryFor, vhash } from './scenery';
 import { env } from './env';
 import { active, sessionChanged } from './active';
 import type { GameSession } from '../game/session';
 import { useGame } from '../game/store';
 
-const N = 110; // buildings per side
+/** building slots per side × 7 m spacing ≈ 616 m — matched to the HIGH fog end (fewer on lower tiers) */
+const N = 88;
 const SPACING = 7;
 
 function hash(n: number) {
@@ -35,7 +36,7 @@ type Slot2 = Slot & { d: number; style: number };
  * cornices / setbacks / rooftop billboards) + spires. Each slot takes the look of the district at its world z,
  * so the skyline visibly changes as you cross into a new district.
  */
-export function City({ density, tier }: { density: number; tier: Tier }) {
+export function City({ density, fastFacade }: { density: number; fastFacade: boolean }) {
   const n = Math.round(N * density);
   const bodies = useRef<THREE.InstancedMesh>(null);
   const crowns = useRef<THREE.InstancedMesh>(null);
@@ -45,7 +46,7 @@ export function City({ density, tier }: { density: number; tier: Tier }) {
     g.setAttribute('aStyle', new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 1));
     return g;
   }, [n]);
-  const bodyMat = useMemo(() => makeFacadeMaterial(tier === 'low', tier === 'high' ? 4 : 1), [tier]);
+  const bodyMat = useMemo(() => makeFacadeMaterial(fastFacade, fastFacade ? 1 : 4), [fastFacade]);
   const slots = useMemo<Slot2[]>(() => Array.from({ length: n * 2 }, (_, i) => ({ wz: Math.floor(i / 2) * SPACING - 20, seed: i, d: -1, style: -1 })), [n]);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const col = useMemo(() => new THREE.Color(), []);
@@ -160,7 +161,7 @@ export function City({ density, tier }: { density: number; tier: Tier }) {
 
   return (
     <group>
-      <instancedMesh key={`b${n}${tier}`} ref={bodies} args={[bodyGeo, bodyMat, n * 2]} frustumCulled={false} />
+      <instancedMesh key={`b${n}${fastFacade}`} ref={bodies} args={[bodyGeo, bodyMat, n * 2]} frustumCulled={false} />
       <instancedMesh key={`r${n}`} ref={crowns} args={[undefined, undefined, n * 2]} frustumCulled={false}>
         <boxGeometry args={[1, 1, 1]} />
         <meshBasicMaterial toneMapped={false} />
@@ -192,51 +193,66 @@ const SIGN_LAYOUT: Record<string, { x: number; yMin: number; yRange: number; sca
 
 function Signs({ density }: { density: number }) {
   const count = Math.max(12, Math.round(26 * density));
-  const refs = useRef<THREE.Mesh[]>([]);
-  const state = useMemo(() => Array.from({ length: count }, (_, i) => ({ wz: 60 + i * SIGN_GAP, key: '' })), [count]);
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const state = useMemo(() => Array.from({ length: count }, (_, i) => ({ wz: 60 + i * SIGN_GAP, key: '', sx: 1, sy: 1 })), [count]);
+  const geo = useMemo(() => {
+    const g = new THREE.PlaneGeometry(1, 1);
+    g.setAttribute('aRect', new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4));
+    return g;
+  }, [count]);
+  const mat = useMemo(() => makeSignMaterial(), []);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
   useFrame(() => {
     const s = active();
-    if (!s) return;
+    const mesh = ref.current;
+    if (!s || !mesh) return;
     if (sessionChanged('signs', s)) state.forEach((st, i) => { st.wz = s.z + 60 + i * SIGN_GAP; st.key = ''; });
-    state.forEach((st, i) => {
+    const rect = geo.getAttribute('aRect') as THREE.InstancedBufferAttribute;
+    let rectDirty = false;
+    let n = 0;
+    for (const st of state) {
       if (st.wz < s.z - 20) st.wz += count * SIGN_GAP;
+      const seed = Math.floor(st.wz / SIGN_GAP);
       const dIdx = districtAtZ(s, st.wz);
-      const d = DISTRICTS[dIdx % DISTRICTS.length];
       const p = sceneryFor(dIdx);
       const lay = SIGN_LAYOUT[p.signStyle];
-      const mesh = refs.current[i];
-      if (!mesh) return;
-      const seed = Math.floor(st.wz / SIGN_GAP);
-      mesh.visible = seed % lay.every === 0;
-      const word = d.signs[seed % d.signs.length];
-      const color = [d.primary, d.secondary, d.accent][seed % 3];
+      if (seed % lay.every !== 0) continue;
+      const d = DISTRICTS[dIdx % DISTRICTS.length];
+      const wi = seed % d.signs.length;
+      const word = d.signs[wi];
+      const color = [d.primary, d.secondary, d.accent][wi % 3]; // one colour per word (keeps the atlas small)
       const vertical = p.signStyle === 'shop' || (p.signStyle !== 'corporate' && /[^\x00-\x7F]/.test(word));
-      const key = `${word}|${color}|${p.signStyle}`;
+      const key = `${word}|${color}|${p.signStyle}|${vertical}`;
+      const cell = signAtlas().cell(word, color, vertical, p.signStyle);
       if (key !== st.key) {
         st.key = key;
-        const mat = mesh.material as THREE.MeshBasicMaterial;
-        mat.map = signTexture(word, color, vertical, p.signStyle);
-        mat.needsUpdate = true;
         const chars = [...word].length;
         const k = lay.scale;
-        if (vertical) mesh.scale.set(2.2 * k, (1.1 + chars * 1.8) * k, 1);
-        else mesh.scale.set((1.2 + chars * 1.05) * k, 2.2 * k, 1);
+        if (vertical) {
+          st.sx = 2.2 * k;
+          st.sy = (1.1 + chars * 1.8) * k;
+        } else {
+          st.sx = (1.2 + chars * 1.05) * k;
+          st.sy = 2.2 * k;
+        }
+      }
+      if (rect.getX(n) !== cell.u || rect.getY(n) !== cell.v) {
+        rect.setXYZW(n, cell.u, cell.v, cell.w, cell.h);
+        rectDirty = true;
       }
       const side = seed % 2 === 0 ? -1 : 1;
-      mesh.position.set(side * (lay.x + (seed % 3) * 0.6), lay.yMin + vhash(seed) * lay.yRange, -(st.wz - s.z));
-      mesh.rotation.y = side * -0.55;
-    });
+      dummy.position.set(side * (lay.x + (seed % 3) * 0.6), lay.yMin + vhash(seed) * lay.yRange, -(st.wz - s.z));
+      dummy.rotation.set(0, side * -0.55, 0);
+      dummy.scale.set(st.sx, st.sy, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(n, dummy.matrix);
+      n++;
+    }
+    mesh.count = n;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (rectDirty) rect.needsUpdate = true;
   });
-  return (
-    <group>
-      {state.map((_, i) => (
-        <mesh key={i} ref={(m) => { if (m) refs.current[i] = m; }}>
-          <planeGeometry args={[1, 1]} />
-          <meshBasicMaterial transparent toneMapped={false} side={THREE.DoubleSide} />
-        </mesh>
-      ))}
-    </group>
-  );
+  return <instancedMesh key={count} ref={ref} args={[geo, mat, count]} frustumCulled={false} />;
 }
 
 /** Floating candlestick holograms above the skyline (decorative, colored by recent returns). */

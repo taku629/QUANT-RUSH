@@ -1,5 +1,6 @@
 import { useFrame } from '@react-three/fiber';
-import { useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
+import { mergeStatic, unmerge } from './merge';
 import * as THREE from 'three';
 import { LANE_COLORS, VEHICLES, type VehicleId } from '../game/content';
 import { LANES } from '../sim/config';
@@ -128,6 +129,14 @@ export function Player({ vehicle, showRider }: { vehicle: VehicleId; showRider: 
   const glowTex = useMemo(() => glowTexture(), []);
   const streakTex = useMemo(() => streakTexture(), []);
   const ringColor = useMemo(() => new THREE.Color(), []);
+
+  // bake the vehicle + rider parts into 1–2 meshes (≈20 draw calls → 2)
+  useLayoutEffect(() => {
+    const g = body.current;
+    if (!g) return;
+    const merged = mergeStatic(g);
+    return () => unmerge(g, merged);
+  }, [vehicle, showRider]);
 
   useFrame((_, dt) => {
     const s = active();

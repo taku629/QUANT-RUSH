@@ -3,8 +3,10 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { env } from './env';
 import { active } from './active';
+import { InstanceBatch } from './instancing';
 
-const POOL = 24;
+/** Ramps (wedge + lit edge strips) and boost pads — instanced: 3 draw calls in total. */
+const CAP = 32;
 
 function boostTexture() {
   const c = document.createElement('canvas');
@@ -27,7 +29,6 @@ function boostTexture() {
   return t;
 }
 
-/** ramp = wedge prism (launch), boost = glowing chevron pad */
 function rampGeometry() {
   const shape = new THREE.Shape();
   shape.moveTo(0, 0);
@@ -40,50 +41,47 @@ function rampGeometry() {
   return g;
 }
 
+const CYAN = new THREE.Color('#00f0ff');
+const GOLD = new THREE.Color('#ffd23d');
+const tmp = new THREE.Color();
+const PAD_SLOPE = Math.atan2(1.1, 5);
+
 export function Pickups() {
   const tex = useMemo(() => boostTexture(), []);
-  const slots = useMemo(() => {
-    const rampGeo = rampGeometry();
-    const edgeGeo = new THREE.EdgesGeometry(rampGeo);
-    const padGeo = new THREE.PlaneGeometry(3.2, 7);
-    return Array.from({ length: POOL }, () => {
-      const g = new THREE.Group();
-      const ramp = new THREE.Mesh(rampGeo, new THREE.MeshStandardMaterial({ color: '#141a3a', metalness: 0.6, roughness: 0.3, emissive: '#1a2a6a', emissiveIntensity: 0.6 }));
-      const edges = new THREE.LineSegments(edgeGeo, new THREE.LineBasicMaterial({ color: '#00f0ff', toneMapped: false }));
-      ramp.add(edges);
-      const pad = new THREE.Mesh(padGeo, new THREE.MeshBasicMaterial({ map: tex, color: '#ffd23d', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-      pad.rotation.x = -Math.PI / 2;
-      pad.position.y = 0.05;
-      g.add(ramp, pad);
-      g.visible = false;
-      return { g, ramp, pad, edges };
-    });
-  }, [tex]);
+  const b = useMemo(
+    () => ({
+      ramp: new InstanceBatch(rampGeometry(), new THREE.MeshStandardMaterial({ color: '#141a3a', metalness: 0.6, roughness: 0.3, emissive: '#1a2a6a', emissiveIntensity: 0.6 }), CAP),
+      // lit side rails of the ramp (replace the old per-ramp edge lines)
+      edge: new InstanceBatch(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ toneMapped: false }), CAP * 2, true),
+      pad: new InstanceBatch(new THREE.PlaneGeometry(3.2, 7), new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }), CAP * 2, true),
+    }),
+    [tex],
+  );
+  const batches = useMemo(() => Object.values(b), [b]);
   useFrame(() => {
     const s = active();
-    if (!s) return;
-    tex.offset.y = -(env.time * 2.5) % 1;
-    let i = 0;
-    for (const p of s.pickups) {
-      if (i >= POOL) break;
-      const ahead = p.z - s.z;
-      if (ahead < -12 || ahead > 250) continue;
-      const sl = slots[i++];
-      sl.g.visible = true;
-      sl.g.position.set(p.x, 0, -ahead);
-      sl.ramp.visible = p.kind === 'ramp';
-      sl.pad.visible = p.kind === 'boost' || p.kind === 'ramp';
-      (sl.pad.material as THREE.MeshBasicMaterial).color.set(p.kind === 'ramp' ? '#00f0ff' : '#ffd23d');
-      (sl.pad.material as THREE.MeshBasicMaterial).opacity = p.used ? 0.25 : 0.9;
-      sl.pad.position.z = p.kind === 'ramp' ? 6 : 0;
-      (sl.edges.material as THREE.LineBasicMaterial).color.copy(env.primary).multiplyScalar(1.6);
+    for (const x of batches) x.begin();
+    if (s) {
+      tex.offset.y = -(env.time * 2.5) % 1;
+      const edgeCol = tmp.copy(env.primary).multiplyScalar(1.6);
+      for (const p of s.pickups) {
+        const ahead = p.z - s.z;
+        if (ahead < -12 || ahead > 250) continue;
+        const z = -ahead;
+        const k = p.used ? 0.25 : 0.9;
+        if (p.kind === 'ramp') {
+          b.ramp.add(null, p.x, 0, z);
+          for (const sx of [-1.6, 1.6]) b.edge.add(null, p.x + sx, 0.55, z, 0.1, 0.1, 5.1, PAD_SLOPE, 0, 0, edgeCol);
+          b.pad.add(null, p.x, 0.05, z + 6, 1, 1, 1, -Math.PI / 2, 0, 0, tmp.copy(CYAN).multiplyScalar(k));
+        } else b.pad.add(null, p.x, 0.05, z, 1, 1, 1, -Math.PI / 2, 0, 0, tmp.copy(GOLD).multiplyScalar(k));
+      }
     }
-    for (; i < POOL; i++) slots[i].g.visible = false;
+    for (const x of batches) x.end();
   });
   return (
     <group>
-      {slots.map((sl, i) => (
-        <primitive key={i} object={sl.g} />
+      {batches.map((x, i) => (
+        <primitive key={i} object={x.mesh} />
       ))}
     </group>
   );

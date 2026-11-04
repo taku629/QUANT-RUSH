@@ -6,6 +6,7 @@ import { active } from './active';
 import { districtAtZ } from './City';
 import { env } from './env';
 import { landmarkZ, vhash } from './scenery';
+import { makeHazeMaterial, mergeStatic } from './merge';
 
 /**
  * District street furniture + landmarks. Everything here is a background object:
@@ -231,8 +232,20 @@ export function buildLandmarks() {
   return out;
 }
 
+const ANIMATED = new Set(['spin', 'beacon', 'screen', 'ticker']);
+
 function Landmarks() {
-  const lms = useMemo(() => buildLandmarks(), []);
+  const lms = useMemo(() => {
+    const built = buildLandmarks();
+    // static parts of each landmark → 1–2 merged meshes; animated parts stay separate
+    for (const L of Object.values(built)) {
+      const haze = { value: 0 };
+      const fog = { value: new THREE.Color() };
+      mergeStatic(L.group, { keep: (o) => ANIMATED.has(o.name), material: (k) => makeHazeMaterial(k, haze, fog) });
+      Object.assign(L, { haze, fog, animated: L.parts.filter((p) => ANIMATED.has(p.mesh.name)) });
+    }
+    return built as Record<string, ReturnType<typeof buildLandmarks>[string] & { haze: { value: number }; fog: { value: THREE.Color }; animated: LandmarkPart[] }>;
+  }, []);
   const fogCol = useMemo(() => new THREE.Color(), []);
   useFrame(() => {
     const s = active();
@@ -248,7 +261,9 @@ function Landmarks() {
       // emerge from the haze: far → silhouette tinted toward the fog, near → full colour
       const haze = Math.min(0.88, Math.max(0, (dist - 120) / 650));
       fogCol.copy(env.fog);
-      for (const p of L.parts) {
+      L.haze.value = haze;
+      L.fog.value.copy(fogCol);
+      for (const p of L.animated) {
         p.mat.color.copy(p.base).lerp(fogCol, haze);
         if (p.mesh.name === 'spin') p.mesh.rotation.z = env.time * 0.35;
         if (p.mesh.name === 'beacon' && Math.floor(env.time * 2) % 2 === 0) p.mat.color.set('#ffffff');

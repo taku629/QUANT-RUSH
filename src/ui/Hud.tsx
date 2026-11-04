@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { audio } from '../game/audio';
 import { DISTRICTS, LANE_COLORS, LANE_NAMES, REGIME_STYLE } from '../game/content';
 import { input } from '../game/input';
@@ -35,7 +35,6 @@ export function Hud() {
       <TutorialCard />
       <TipToast />
       <DistrictCard />
-      <FpsCounter />
       {phase === 'ending' && <div className="end-banner">SESSION CLOSED</div>}
       {hud.alpha > 0 && <div className="alpha-frame" />}
       {hud.regime === 'CRASH' && <div className="crash-frame" />}
@@ -291,14 +290,25 @@ function TipToast() {
   );
 }
 
-function FpsCounter() {
+/** Dev FPS counter — writes straight to the DOM (no React re-render). */
+export function FpsCounter() {
   const show = useGame((s) => s.settings.showFps);
-  const fps = useTier((s) => s.fps);
-  const tier = useTier((s) => s.tier);
-  const q = useGame((s) => s.settings.quality);
-  const calls = useTier((s) => s.calls);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!show) return;
+    const paint = () => {
+      const t = useTier.getState();
+      const q = useGame.getState().settings.quality;
+      if (ref.current) {
+        ref.current.textContent = `${t.fps} FPS · ${t.calls} draws · ${Math.round(t.tris / 1000)}k tris · ${q === 'auto' ? `AUTO:${t.tier}` : q}`;
+        ref.current.className = `fps ${t.fps >= 55 ? 'ok' : t.fps >= 30 ? 'mid' : 'bad'}`;
+      }
+    };
+    paint();
+    return useTier.subscribe(paint);
+  }, [show]);
   if (!show) return null;
-  return <div className="fps">{fps} FPS · {q === 'auto' ? `AUTO:${tier}` : q} · {calls} draws</div>;
+  return <div ref={ref} className="fps" data-testid="fps" />;
 }
 
 function NewsBanner() {

@@ -31,6 +31,10 @@ function label(text: string, sub: string, color: string) {
  * BLOCK orders: big institutional orders that stand in ONE lane. Ride through the gate (in that lane)
  * to trade it at that lane's spread — a physical routing decision with inventory consequences.
  */
+type BlockRec = { id: number; side: 'BUY' | 'SELL'; qty: number; block: number; tier: number; ticksToArrival: number };
+const recs: BlockRec[] = Array.from({ length: POOL }, () => ({ id: 0, side: 'BUY', qty: 0, block: 0, tier: 0, ticksToArrival: 0 }));
+const blocks: BlockRec[] = [];
+
 export function Blocks() {
   const texCache = useMemo(() => new Map<string, THREE.Texture>(), []);
   const slots = useMemo(
@@ -59,7 +63,20 @@ export function Blocks() {
     const s = active();
     if (!s) return;
     const e = s.engine;
-    const blocks = e.done ? [] : e.visibleOrders().filter((o) => o.block !== undefined);
+    // collect visible block orders into a reused array (no per-frame allocation)
+    blocks.length = 0;
+    if (!e.done)
+      e.forEachVisibleOrder((o, tier, tta) => {
+        if (o.block === undefined || blocks.length >= POOL) return;
+        const r = recs[blocks.length];
+        r.id = o.id;
+        r.side = o.side;
+        r.qty = o.qty;
+        r.block = o.block;
+        r.tier = tier;
+        r.ticksToArrival = tta;
+        blocks.push(r);
+      });
     const frac = (s.frame % 3) / 3;
     for (let i = 0; i < POOL; i++) {
       const sl = slots[i];
@@ -78,7 +95,7 @@ export function Blocks() {
       sl.g.visible = true;
       const remain = Math.max(0, o.ticksToArrival - frac);
       const dist = remain * e.cfg.dt * Math.max(20, s.speed);
-      sl.g.position.set(LANE_X[o.block!], 2.1, -dist);
+      sl.g.position.set(LANE_X[o.block as 0 | 1 | 2], 2.1, -dist);
       const buy = o.side === 'BUY';
       const col = buy ? '#3dff8b' : '#ff3d6e';
       (sl.hex.material as THREE.MeshBasicMaterial).color.set(col).multiplyScalar(1.6);

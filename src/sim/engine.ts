@@ -379,6 +379,21 @@ export class MarketMakerEngine {
     return computeSignals(this.tape, this.tick);
   }
 
+  /**
+   * Allocation-free variant of visibleOrders() for per-frame rendering: calls `fn` for every order that is
+   * already visible and has not yet arrived. Same data as visibleOrders(), nothing hidden is exposed.
+   */
+  forEachVisibleOrder(fn: (o: { id: number; side: Side; qty: number; block?: LaneId }, tier: 0 | 1 | 2 | 3, ticksToArrival: number) => void) {
+    for (let a = this.tick; a <= this.tick + this.tape.maxLeadTicks; a++) {
+      const list = this.tape.arrivals.get(a);
+      if (!list) continue;
+      for (const o of list) {
+        if (o.spawnTick > this.tick) continue;
+        fn(o, urgencyTier(o.willingness), a - this.tick);
+      }
+    }
+  }
+
   visibleOrders(): VisibleOrder[] {
     const out: VisibleOrder[] = [];
     for (let a = this.tick; a <= this.tick + this.tape.maxLeadTicks; a++) {

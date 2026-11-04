@@ -4,7 +4,7 @@ import { attachInput } from './game/input';
 import { useGame } from './game/store';
 import { GameCanvas } from './scene/GameCanvas';
 import { webglAvailable } from './scene/quality';
-import { Countdown, Hud, PauseMenu } from './ui/Hud';
+import { Countdown, FpsCounter, Hud, PauseMenu } from './ui/Hud';
 import { Learning } from './ui/Learning';
 import { QuantLab } from './ui/QuantLab';
 import { Results } from './ui/Results';
@@ -80,6 +80,7 @@ export function App() {
       {phase === 'learning' && <Learning />}
       {phase === 'lab' && <QuantLab />}
       {lost && <GlError lost />}
+      <FpsCounter />
     </div>
   );
 }

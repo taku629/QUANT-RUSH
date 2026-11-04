@@ -38,7 +38,7 @@ export const defaultSettings = (): Settings => ({
   fixedSeed: null,
   reduceMotion: typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false),
   tips: true,
-  showFps: false,
+  showFps: true, // dev build: on by default (toggle in SETTINGS)
   tutorialDone: false,
 });
 

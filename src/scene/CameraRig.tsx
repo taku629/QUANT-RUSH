@@ -13,6 +13,9 @@ export function CameraRig() {
   const pos = useRef(new THREE.Vector3(0, 4, 9));
   const roll = useRef(0);
   const orbit = useRef(0);
+  // reused every frame (no per-frame allocation)
+  const tp = useRef(new THREE.Vector3()).current;
+  const tl = useRef(new THREE.Vector3()).current;
   useFrame((_, dt) => {
     const s = active();
     const st = useGame.getState();
@@ -20,8 +23,6 @@ export function CameraRig() {
     if (!s) return;
     const mode = st.settings.camera;
     const phase = st.phase;
-    let tp = new THREE.Vector3();
-    let tl = new THREE.Vector3();
     let fov = 66;
     const speedK = Math.min(1.5, s.speed / 45);
     // portrait screens: pull the camera back / up so all three lanes stay visible

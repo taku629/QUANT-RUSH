@@ -10,7 +10,9 @@ export function Bender() {
   const frame = useRef(0);
   const cur = useRef({ c: 0, h: 0 });
   useFrame((_, dt) => {
-    if (frame.current++ % 30 === 0) bendScene(scene);
+    // patch new materials: every frame while the scene is being built, then only occasionally (cheap no-op scan)
+    const f = frame.current++;
+    if (f < 10 || f % 240 === 0) bendScene(scene);
     const s = active();
     if (!s) return;
     const reduce = useGame.getState().settings.reduceMotion;

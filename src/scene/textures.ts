@@ -128,6 +128,13 @@ export type SignStyle = 'shop' | 'corporate' | 'brass' | 'neon' | 'pop';
 export function signTexture(text: string, color: string, vertical: boolean, style: SignStyle = 'neon') {
   const key = `sign:${text}:${color}:${vertical}:${style}`;
   if (cache.has(key)) return cache.get(key)!;
+  const t = finish(signCanvas(text, color, vertical, style));
+  cache.set(key, t);
+  return t;
+}
+
+/** draw one sign into its own canvas (used directly by the sign atlas) */
+export function signCanvas(text: string, color: string, vertical: boolean, style: SignStyle = 'neon'): HTMLCanvasElement {
   const chars = [...text];
   const w = vertical ? 128 : 64 + chars.length * 56;
   const h = vertical ? 64 + chars.length * 104 : 128;
@@ -195,9 +202,7 @@ export function signTexture(text: string, color: string, vertical: boolean, styl
     g.font = font.replace('88px', '76px');
     g.fillText(text, w / 2, h / 2 + 4);
   }
-  const t = finish(c);
-  cache.set(key, t);
-  return t;
+  return c;
 }
 
 export function glowTexture() {

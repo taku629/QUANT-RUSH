@@ -17,7 +17,7 @@ import { Obstacles } from './Obstacles';
 import { Orders } from './Orders';
 import { Pickups } from './Pickups';
 import { Player } from './Player';
-import { TIERS, useTier, type Tier } from './quality';
+import { effectiveSpec, useTier, type Tier, type TierSpec } from './quality';
 import { Road } from './Road';
 import { Sky } from './Sky';
 import { Ghost } from './Ghost';
@@ -53,7 +53,7 @@ function PlayerSwitch() {
   return <Player vehicle={v} showRider={!(camera === 'first' && phase === 'playing')} />;
 }
 
-function Post({ tier }: { tier: Tier }) {
+function Post({ post }: { post: TierSpec['post'] }) {
   const offset = useMemo(() => new THREE.Vector2(0.0004, 0.0004), []);
   const ca = useRef<{ offset: THREE.Vector2 } | null>(null);
   useFrame(() => {
@@ -63,7 +63,6 @@ function Post({ tier }: { tier: Tier }) {
     const k = reduce ? 0 : 0.0003 + env.danger * 0.0008 + fx.shake * 0.004;
     ca.current.offset.set(k, k);
   });
-  const post = TIERS[tier].post;
   if (post === 'none') return null;
   if (post === 'bloom')
     return (
@@ -81,16 +80,30 @@ function Post({ tier }: { tier: Tier }) {
 }
 
 /** FPS sampler (always on, cheap) — feeds the optional on-screen counter */
+/**
+ * FPS + renderer stats. info.autoReset is turned off and reset here once per frame, so the counts cover the
+ * whole previous frame including every post-processing pass (with autoReset each pass would reset them).
+ */
 function FpsProbe() {
-  const acc = useRef({ t: 0, n: 0 });
+  const acc = useRef({ t: 0, n: 0, calls: 0, tris: 0 });
   const gl = useThree((s) => s.gl);
+  useEffect(() => {
+    gl.info.autoReset = false;
+    return () => {
+      gl.info.autoReset = true;
+    };
+  }, [gl]);
   useFrame((_, dt) => {
-    acc.current.t += dt;
-    acc.current.n++;
-    if (acc.current.t >= 0.5) {
-      // renderer stats of the previous frame (draw calls incl. post-processing passes)
-      useTier.setState({ fps: Math.round(acc.current.n / acc.current.t), calls: gl.info.render.calls, tris: gl.info.render.triangles });
-      acc.current = { t: 0, n: 0 };
+    const a = acc.current;
+    a.calls = gl.info.render.calls;
+    a.tris = gl.info.render.triangles;
+    gl.info.reset();
+    a.t += dt;
+    a.n++;
+    if (a.t >= 0.5) {
+      useTier.setState({ fps: Math.round(a.n / a.t), calls: a.calls, tris: a.tris });
+      a.t = 0;
+      a.n = 0;
     }
   });
   return null;
@@ -102,7 +115,8 @@ export function GameCanvas({ onContextLost }: { onContextLost: () => void }) {
   const quality = useGame((s) => s.settings.quality);
   const autoTier = useTier((s) => s.tier);
   const tier: Tier = quality === 'auto' ? autoTier : quality;
-  const spec = TIERS[tier];
+  const spec = effectiveSpec(tier, quality);
+  env.fogCap = spec.fogFar;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // antialias can only be chosen when the WebGL context is created: fix it at mount (no remounts)
   const [antialias] = useState(() => spec.antialias);
@@ -146,7 +160,7 @@ export function GameCanvas({ onContextLost }: { onContextLost: () => void }) {
         <Lights />
         <Sky />
         <Road />
-        <City density={spec.city} tier={tier} />
+        <City density={spec.city} fastFacade={spec.fastFacade} />
         <Districts density={spec.city} />
         {tier !== 'low' && <Skyline />}
         {tier !== 'low' && <Sidewalks />}
@@ -159,7 +173,7 @@ export function GameCanvas({ onContextLost }: { onContextLost: () => void }) {
         <Particles max={spec.particles} />
         <SpeedLines count={spec.speedLines} />
         <CameraRig />
-        <Post tier={tier} />
+        <Post post={spec.post} />
       </Suspense>
     </Canvas>
   );

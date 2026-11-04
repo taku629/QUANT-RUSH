@@ -19,6 +19,7 @@ export function Particles({ max: MAX_P }: { max: number }) {
   const life = useMemo(() => new Float32Array(MAX_P), [MAX_P]);
   const maxLife = useMemo(() => new Float32Array(MAX_P).fill(1), [MAX_P]);
   const cursor = useRef(0);
+  const alive = useRef(false);
   const c = useMemo(() => new THREE.Color(), []);
   const mat = useMemo(
     () =>
@@ -41,6 +42,7 @@ export function Particles({ max: MAX_P }: { max: number }) {
     const pos = geo.attributes.position.array as Float32Array;
     const col = geo.attributes.color.array as Float32Array;
     const size = geo.attributes.size.array as Float32Array;
+    const fresh = fx.bursts.length > 0;
     while (fx.bursts.length) {
       const b = fx.bursts.shift()!;
       c.set(b.color);
@@ -64,11 +66,15 @@ export function Particles({ max: MAX_P }: { max: number }) {
     }
     const s = active();
     const drift = s ? s.speed * dt * 0.6 : 0;
+    // nothing alive and nothing to clear → skip the loop and the GPU uploads entirely
+    if (!alive.current && !fresh) return;
+    let any = false;
     for (let i = 0; i < MAX_P; i++) {
       if (life[i] <= 0) {
         size[i] = 0;
         continue;
       }
+      any = true;
       life[i] -= dt;
       pos[i * 3] += vel[i * 3] * dt;
       pos[i * 3 + 1] += vel[i * 3 + 1] * dt;
@@ -76,9 +82,10 @@ export function Particles({ max: MAX_P }: { max: number }) {
       vel[i * 3 + 1] -= 9 * dt;
       size[i] = 0.35 * Math.max(0, life[i] / maxLife[i]);
     }
+    alive.current = any;
     geo.attributes.position.needsUpdate = true;
-    geo.attributes.color.needsUpdate = true;
     geo.attributes.size.needsUpdate = true;
+    if (fresh) geo.attributes.color.needsUpdate = true;
   });
   return <points key={MAX_P} geometry={geo} material={mat} frustumCulled={false} />;
 }

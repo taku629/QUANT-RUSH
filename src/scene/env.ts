@@ -15,6 +15,8 @@ export const env = {
   key: new THREE.Color('#ffffff'),
   fogNear: 60,
   fogFar: 420,
+  /** quality-tier cap on the fog end (the city is only built out to roughly this distance) */
+  fogCap: 600,
   danger: 0,
   time: 0,
 };
@@ -53,7 +55,8 @@ export function updateEnv(district: number, regime: RegimeId, dt: number) {
   env.skyTop.lerp(tmp.t, k);
   env.key.lerp(tmp.k, k);
   env.fogNear += (sc.fogNear - env.fogNear) * k;
-  env.fogFar += (sc.fogFar - env.fogFar) * k;
+  const far = Math.min(sc.fogFar, env.fogCap);
+  env.fogFar += (far - env.fogFar) * k;
   tmp.r.set(r.color);
   env.primary.lerp(tmp.p, k);
   env.secondary.lerp(tmp.s, k);
