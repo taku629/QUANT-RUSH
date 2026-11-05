@@ -62,6 +62,8 @@ export type Hud = {
   overloadLeft: number | null;
   recLane: LaneId;
   danger: number;
+  /** how far into this district the clock reaches at the current speed (0..1+; ≥ 1 = the gate is within reach) */
+  reach: number;
 };
 
 export type Popup = { id: number; text: string; sub?: string; color: string; size: 'sm' | 'md' | 'lg' | 'xl'; x: number; y: number };
@@ -364,6 +366,7 @@ export const useGame = create<Store>((set, get) => ({
         overloadLeft: s.risk >= 1 ? Math.max(0, BALANCE.risk.burstGrace - s.overload) : null,
         recLane: s.advisor.lane,
         danger: s.advisor.danger,
+        reach: g ? (s.z + Math.max(s.speed, s.vehicle.baseSpeed) * Math.max(0, s.timeLeft) - s.districtStartZ) / Math.max(1, g.z - s.districtStartZ) : 1,
       },
     });
   },
@@ -396,7 +399,7 @@ export function dispatchEvents(events: FxEvent[]) {
         audio.fill(s?.combo ?? 0, tier);
         fx.burst({ color: f.qty < 0 ? '#3dff8b' : '#ff3d6e', count: 18 + tier * 8, speed: 6 + tier * 2, y: 1.3 });
         fx.fovKick = Math.min(6, fx.fovKick + 1.2);
-        st.popup({ text: money(f.spread + f.rebate), sub: `${f.qty < 0 ? 'SOLD' : 'BOUGHT'} ${Math.abs(f.qty)} @ ${f.price.toFixed(2)}`, color: LANE_COLORS[f.lane], size: tier >= 3 ? 'md' : 'sm', x: 50 + (Math.random() - 0.5) * 22, y: 66 });
+        // v3 HUD: no per-fill popup — the PnL readout ticks (+$ / −$) carry gains and losses
         break;
       }
       case 'miss':
@@ -406,7 +409,7 @@ export function dispatchEvents(events: FxEvent[]) {
         audio.toxic();
         fx.flash = 0.35;
         fx.flashColor = '#ff2a4d';
-        st.popup({ text: `TOXIC FLOW ${money(ev.fill.markout ?? 0)}`, sub: `逆選択: 約定後に価格が不利に動いた · ${ev.points.toLocaleString()} pts`, color: '#ff2a4d', size: 'md', x: 50, y: 30 });
+        st.popup({ text: 'TOXIC', sub: `約定後に価格が逆行 ${money(ev.fill.markout ?? 0)} · ${ev.points.toLocaleString()} pts`, color: '#ff2a4d', size: 'md', x: 50, y: 30 });
         break;
       case 'hedge':
         audio.hedge();
@@ -424,7 +427,7 @@ export function dispatchEvents(events: FxEvent[]) {
         fx.hitstop = 0.05;
         fx.fovKick = Math.min(10, fx.fovKick + 5);
         fx.burst({ x: ev.x * 0.5, color: '#ffe23d', count: 20, speed: 10, life: 0.5 });
-        st.popup({ text: ev.air ? 'AIR CLEAR!' : 'NEAR MISS!', sub: `+${ev.points}`, color: '#ffe23d', size: 'lg', y: 30 });
+        st.popup({ text: ev.air ? 'AIR CLEAR!' : 'NEAR MISS!', sub: `+${ev.points}`, color: '#ffe23d', size: 'md', y: 30 });
         break;
       case 'hit':
         audio.hit();
@@ -449,7 +452,6 @@ export function dispatchEvents(events: FxEvent[]) {
         audio.boost();
         fx.fovKick = Math.min(12, fx.fovKick + 6);
         fx.burst({ color: '#00f0ff', count: 30, speed: 8, life: 0.6, y: 0.3 });
-        st.popup({ text: 'RAMP!', color: '#00f0ff', size: 'md', y: 34 });
         break;
       case 'boost':
         audio.boost();
@@ -461,7 +463,7 @@ export function dispatchEvents(events: FxEvent[]) {
         audio.recLane();
         fx.flash = Math.max(fx.flash, 0.25);
         fx.flashColor = LANE_COLORS[ev.lane];
-        st.popup({ text: ['◀◀ LEFT', '▲ CENTER', 'RIGHT ▶▶'][ev.lane], sub: ['AGGRESSIVE ±2¢', 'BALANCED ±5¢', 'DEFENSIVE ±10¢'][ev.lane] + ' が有利', color: LANE_COLORS[ev.lane], size: 'xl', y: 30 });
+        // no banner: the road glow slides over and the HUD status line says "◀ 光るレーンへ" until you are in it
         break;
       }
       case 'coin':

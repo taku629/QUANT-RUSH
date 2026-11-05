@@ -17,6 +17,8 @@ export type Settings = {
   tips: boolean;
   /** show an FPS counter */
   showFps: boolean;
+  /** v3 PRO HUD: the full tape panel (flow / momentum / volatility) and speed, for players who read the tape themselves */
+  proHud: boolean;
   /** first-play tutorial completed */
   tutorialDone: boolean;
 };
@@ -40,6 +42,7 @@ export const defaultSettings = (): Settings => ({
   reduceMotion: typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false),
   tips: true,
   showFps: true, // dev build: on by default (toggle in SETTINGS)
+  proHud: false,
   tutorialDone: false,
 });
 

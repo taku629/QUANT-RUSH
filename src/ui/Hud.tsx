@@ -1,35 +1,38 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { audio } from '../game/audio';
-import { DISTRICTS, LANE_COLORS, LANE_NAMES, REGIME_STYLE } from '../game/content';
+import { DISTRICTS, REGIME_STYLE } from '../game/content';
 import { input } from '../game/input';
 import { GAME_RULES } from '../game/session';
 import { BALANCE } from '../game/gameBalanceConfig';
-import { laneSpreadLabel, useGame, type Hud as HudT } from '../game/store';
+import { useGame, type Hud as HudT } from '../game/store';
 import { FLOW_READ_INFO } from '../sim/signals';
-import type { LaneId } from '../sim/config';
 import { useTier } from '../scene/quality';
 
 const fmtMoney = (v: number) => `${v < 0 ? '−' : '+'}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/**
+ * v3 HUD — four things to read, everything else is on the road:
+ *  1. top-left   PnL (+ score, combo, durability) with gain / loss ticks
+ *  2. top-center district + progress bar with the clock built in (and where the clock runs out)
+ *  3. top-right  market badge (regime + one-line read) and pause
+ *  4. bottom     RISK gauge with the glow hint / status line above it; HEDGE and ALPHA as thumb buttons
+ * PRO HUD (settings) adds the full tape panel and speed for players who read the tape themselves.
+ */
 export function Hud() {
   const hud = useGame((s) => s.hud);
   const phase = useGame((s) => s.phase);
+  const pro = useGame((s) => s.settings.proHud);
   if (!hud) return null;
   return (
     <div className={`hud ${hud.alpha > 0 ? 'alpha-on' : ''} regime-${hud.regime.toLowerCase()}`}>
-      <TopLeft hud={hud} />
-      <TopCenter hud={hud} />
-      <TopRight hud={hud} />
-      <Tape hud={hud} />
-      {hud.combo > 1 && (
-        <div className="combo" key={hud.combo}>
-          <b>{hud.combo}</b>
-          <span>COMBO</span>
-          <small>×{hud.mult.toFixed(2)}</small>
-        </div>
-      )}
-      <RiskGauge hud={hud} />
-      <Lanes lane={hud.lane} rec={hud.recLane} offline={hud.offline} fork={hud.fork} />
+      <ScoreBox hud={hud} />
+      <DistrictBar hud={hud} />
+      <MarketBadge hud={hud} pro={pro} />
+      {pro && <Tape hud={hud} />}
+      <div className="hud-bottom">
+        <StatusLine hud={hud} />
+        <RiskGauge hud={hud} />
+      </div>
       <Actions hud={hud} />
       <NewsBanner />
       <Popups />
@@ -43,12 +46,53 @@ export function Hud() {
   );
 }
 
-const TopLeft = memo(function TopLeft({ hud }: { hud: HudT }) {
+type Tick = { id: number; v: number };
+let tickId = 0;
+
+/** 1. PnL — the number that matters — with small rising +$ / −$ ticks so gains and losses are felt */
+function ScoreBox({ hud }: { hud: HudT }) {
+  const last = useRef(hud.pnl);
+  const acc = useRef(0);
+  const lastEmit = useRef(0);
+  const [ticks, setTicks] = useState<Tick[]>([]);
+  const [flash, setFlash] = useState<'' | 'up' | 'down'>('');
+  useEffect(() => {
+    const d = hud.pnl - last.current;
+    last.current = hud.pnl;
+    if (Math.abs(d) > 50) {
+      acc.current = 0; // a new run / reset — not a trade
+      return;
+    }
+    acc.current += d;
+    const now = performance.now();
+    if (Math.abs(acc.current) >= 1 && now - lastEmit.current > 350) {
+      const v = acc.current;
+      acc.current = 0;
+      lastEmit.current = now;
+      const t = { id: ++tickId, v };
+      setTicks((ts) => [...ts.slice(-2), t]);
+      setFlash(v > 0 ? 'up' : 'down');
+      window.setTimeout(() => setTicks((ts) => ts.filter((x) => x.id !== t.id)), 900);
+      window.setTimeout(() => setFlash(''), 220);
+    }
+  }, [hud.pnl]);
   return (
     <div className="hud-pnl">
       <div className="lbl">PnL</div>
-      <div className={`pnl-val ${hud.pnl >= 0 ? 'up' : 'down'}`} data-testid="pnl">{fmtMoney(hud.pnl)}</div>
-      <div className="score-line">SCORE <b>{hud.score.toLocaleString()}</b></div>
+      <div className={`pnl-val ${hud.pnl >= 0 ? 'up' : 'down'} ${flash ? 'flash-' + flash : ''}`} data-testid="pnl">
+        {fmtMoney(hud.pnl)}
+        <span className="pnl-ticks">
+          {ticks.map((t) => (
+            <i key={t.id} className={t.v > 0 ? 'up' : 'down'}>
+              {t.v > 0 ? '+' : '−'}${Math.abs(t.v).toFixed(2)}
+            </i>
+          ))}
+        </span>
+      </div>
+      <div className="score-line">
+        SCORE <b>{hud.score.toLocaleString()}</b>
+        {hud.combo >= 3 && <em className="combo-chip" key={Math.floor(hud.combo / 5)}>{hud.combo} COMBO ×{hud.mult.toFixed(2)}</em>}
+      </div>
       <div className="stability" title="耐久（0で転倒＝KNOCKOUT）">
         {Array.from({ length: hud.maxStability }, (_, i) => (
           <i key={i} className={i < hud.stability ? 'on' : ''} />
@@ -56,58 +100,74 @@ const TopLeft = memo(function TopLeft({ hud }: { hud: HudT }) {
       </div>
     </div>
   );
-});
+}
 
-function TopCenter({ hud }: { hud: HudT }) {
+/** 2. where am I, how far to the gate, and does the clock reach it? */
+function DistrictBar({ hud }: { hud: HudT }) {
   const d = DISTRICTS[hud.district % DISTRICTS.length];
   const tut = useGame((s) => s.tutorial);
+  const n = (hud.district % DISTRICTS.length) + 1;
+  const prog = Math.min(1, hud.progress) * 100;
+  const reach = Math.max(prog, Math.min(100, hud.reach * 100));
+  const short = !tut && hud.reach < 1;
   return (
-    <div className="hud-center">
-      <div className={`time ${hud.time < 10 ? 'low' : ''} ${tut ? 'frozen' : ''}`} data-testid="time">{hud.time.toFixed(1)}</div>
-      <div className="route">
-        {DISTRICTS.map((dd, i) => {
-          const idx = hud.district % DISTRICTS.length;
-          const state = hud.lap > 0 ? (i < idx ? 'done' : i === idx ? 'cur' : '') : i < hud.district ? 'done' : i === hud.district ? 'cur' : '';
-          return (
-            <div key={dd.id} className={`stop ${state}`} style={{ ['--dc' as string]: dd.primary }}>
-              <i />
-              <span>{dd.jp}</span>
-              {state === 'cur' && <div className="prog" style={{ width: `${hud.progress * 100}%` }} />}
-            </div>
-          );
-        })}
-      </div>
-      <div className="district-name" style={{ color: d.primary }}>
-        {hud.lap > 0 ? `OVERTIME ${hud.lap} · ` : ''}
-        {d.name} <small>GATE {Math.round(hud.gateDist)}m</small>
+    <div className="hud-district" data-testid="district-bar" style={{ ['--dc' as string]: d.primary }}>
+      <div className="dist-head">
+        <b>{d.jp}</b>
+        <span>{hud.lap > 0 ? `OVERTIME ${hud.lap} · ` : ''}{d.name}</span>
+        <small>{n}/{DISTRICTS.length}</small>
         {hud.ghostAhead !== null && <small className="ghost-tag">GHOST {hud.ghostAhead >= 0 ? '+' : ''}{Math.round(hud.ghostAhead)}m</small>}
+      </div>
+      <div className={`dist-bar ${short ? 'short' : ''} ${hud.time < 10 ? 'low' : ''}`}>
+        <div className="dist-fill" style={{ width: `${prog}%` }} />
+        {short && <div className="dist-out" style={{ left: `${reach}%` }} title="このままの速度だと、ここで時間切れ" />}
+        <span className={`dist-time ${tut ? 'frozen' : ''}`} data-testid="time">{hud.time.toFixed(1)}</span>
+        <span className="dist-gate">GATE {Math.round(hud.gateDist)}m</span>
       </div>
     </div>
   );
 }
 
-function TopRight({ hud }: { hud: HudT }) {
+/** 3. what kind of market is this — one word, one colour, one line of reading */
+function MarketBadge({ hud, pro }: { hud: HudT; pro: boolean }) {
   const pause = useGame((s) => s.pause);
-  const cycleCamera = useGame((s) => s.cycleCamera);
-  const camera = useGame((s) => s.settings.camera);
   const rs = REGIME_STYLE[hud.regime];
   return (
     <div className="hud-right">
-      <div className="regime" style={{ ['--rc' as string]: rs.color }} data-testid="regime">
-        <span className="dot" />
-        <b>{rs.label}</b>
-        <small>{rs.jp}</small>
+      <div className="hud-right-row">
+        <div className="regime" style={{ ['--rc' as string]: rs.color }} data-testid="regime">
+          <span className="dot" />
+          <b>{rs.label}</b>
+          <small>{rs.jp}</small>
+        </div>
+        <button className="pause-btn" onClick={() => pause()} title="Pause (P)" data-testid="pause">II</button>
       </div>
-      <div className={`speed ${hud.boost ? 'boost' : ''}`}>
-        <b>{hud.speed.toFixed(0)}</b>
-        <small>km/h</small>
-      </div>
-      <div className="hud-tools">
-        <button onClick={() => cycleCamera()} title="Camera (C)">{camera === 'first' ? '1P' : camera === 'dramatic' ? 'DRM' : 'STD'}</button>
-        <button onClick={() => pause()} title="Pause (P)" data-testid="pause">II</button>
-      </div>
+      {!pro && <div className={`regime-read read-${hud.read.toLowerCase()}`}>{FLOW_READ_INFO[hud.read].jp}</div>}
+      {pro && (
+        <div className={`speed ${hud.boost ? 'boost' : ''}`}>
+          <b>{hud.speed.toFixed(0)}</b>
+          <small>km/h</small>
+        </div>
+      )}
     </div>
   );
+}
+
+/** status above the gauge: one line, never overlapping it (offline > route lock > glow hint) */
+function StatusLine({ hud }: { hud: HudT }) {
+  let cls = '';
+  let text = '';
+  if (hud.offline) {
+    cls = 'bad';
+    text = 'QUOTES OFFLINE — 転倒中は約定できない';
+  } else if (hud.fork) {
+    cls = 'info';
+    text = 'ROUTE LOCKED';
+  } else if (hud.lane !== hud.recLane) {
+    cls = 'glow';
+    text = hud.recLane < hud.lane ? '◀ 光るレーンへ' : '光るレーンへ ▶';
+  }
+  return <div className={`hud-status ${cls}`} data-testid="hud-status">{text}</div>;
 }
 
 /** Public tape read: what a market maker can actually observe right now. */
@@ -175,26 +235,12 @@ function RiskGauge({ hud }: { hud: HudT }) {
   );
 }
 
-const Lanes = memo(function Lanes({ lane, rec, offline, fork }: { lane: LaneId; rec: LaneId; offline: boolean; fork: boolean }) {
-  return (
-    <div className="hud-lanes">
-      {([0, 1, 2] as LaneId[]).map((l) => (
-        <div key={l} className={`lane-chip ${lane === l ? 'on' : ''} ${rec === l ? 'rec' : ''}`} style={{ ['--lc' as string]: LANE_COLORS[l] }}>
-          <b>{laneSpreadLabel(l)}</b>
-          <span>{LANE_NAMES[l]}</span>
-        </div>
-      ))}
-      {offline && <div className="offline">QUOTES OFFLINE</div>}
-      {fork && !offline && <div className="offline fork">ROUTE LOCKED</div>}
-    </div>
-  );
-});
-
+/** thumb buttons: ALPHA under the left thumb, HEDGE under the right (keys: SHIFT / SPACE) */
 function Actions({ hud }: { hud: HudT }) {
   return (
-    <div className="hud-actions">
+    <>
       <button
-        className={`alpha-btn ${hud.alphaReady ? 'ready' : ''} ${hud.alpha > 0 ? 'active' : ''}`}
+        className={`alpha-btn thumb-left ${hud.alphaReady ? 'ready' : ''} ${hud.alpha > 0 ? 'active' : ''}`}
         onPointerDown={(e) => {
           e.preventDefault();
           input.alpha = true;
@@ -204,9 +250,10 @@ function Actions({ hud }: { hud: HudT }) {
         <div className="gauge" style={{ height: `${hud.alpha > 0 ? (hud.alpha / GAME_RULES.alphaDuration) * 100 : hud.gauge}%` }} />
         <b>ALPHA</b>
         <small>{hud.alpha > 0 ? `${hud.alpha.toFixed(1)}s` : hud.alphaReady ? 'READY' : `${Math.floor(hud.gauge)}%`}</small>
+        <em className="key">SHIFT</em>
       </button>
       <button
-        className={`hedge-btn ${hud.hedgeReady && hud.inventory !== 0 ? 'ready' : ''}`}
+        className={`hedge-btn thumb-right ${hud.hedgeReady && hud.inventory !== 0 ? 'ready' : ''} ${hud.risk >= BALANCE.risk.warnAt ? 'call' : ''}`}
         onPointerDown={(e) => {
           e.preventDefault();
           audio.unlock();
@@ -222,7 +269,7 @@ function Actions({ hud }: { hud: HudT }) {
         <small>{hud.hedgeCooldown > 0 ? `${hud.hedgeCooldown.toFixed(1)}s` : `${(hud.hedgeCost * 100).toFixed(0)}¢/株`}</small>
         <em className="key">SPACE</em>
       </button>
-    </div>
+    </>
   );
 }
 
@@ -342,9 +389,10 @@ export function Countdown() {
   const n = useGame((s) => s.countdown);
   if (n > 3 || n < 0) return null;
   return (
-    <div className="countdown" key={n}>
-      {n === 0 ? 'GO!' : n}
-      <small>{n === 3 ? 'OPEN THE BOOK' : n === 2 ? 'READ THE TAPE' : n === 1 ? 'MANAGE THE RISK' : ''}</small>
+    <div className="countdown">
+      <span className="cd-n" key={n}>{n === 0 ? 'GO!' : n}</span>
+      {/* three beats = the whole game, readable in the 3.6 s countdown */}
+      <small>{n === 3 ? '① 光るレーンを走る' : n === 2 ? '② 約定とコインで稼ぐ' : n === 1 ? '③ RISK が溜まったら HEDGE' : ''}</small>
     </div>
   );
 }
@@ -355,6 +403,7 @@ export function PauseMenu() {
   const start = useGame((s) => s.start);
   const settings = useGame((s) => s.settings);
   const setSettings = useGame((s) => s.setSettings);
+  const cycleCamera = useGame((s) => s.cycleCamera);
   return (
     <div className="modal">
       <div className="modal-box pause">
@@ -367,6 +416,8 @@ export function PauseMenu() {
           <button className={settings.roll ? 'on' : ''} onClick={() => setSettings({ roll: !settings.roll })}>ROLL {settings.roll ? 'ON' : 'OFF'}</button>
           <button className={settings.reduceMotion ? 'on' : ''} onClick={() => setSettings({ reduceMotion: !settings.reduceMotion })}>揺れ・点滅を抑える {settings.reduceMotion ? 'ON' : 'OFF'}</button>
           <button className={settings.tips ? 'on' : ''} onClick={() => setSettings({ tips: !settings.tips })}>TIPS {settings.tips ? 'ON' : 'OFF'}</button>
+          <button onClick={() => cycleCamera()}>CAMERA: {settings.camera === 'first' ? '1P' : settings.camera === 'dramatic' ? 'DRAMATIC' : 'STD'} (C)</button>
+          <button className={settings.proHud ? 'on' : ''} onClick={() => setSettings({ proHud: !settings.proHud })}>PRO HUD {settings.proHud ? 'ON' : 'OFF'}</button>
         </div>
         <button className="ghost-btn" onClick={toTitle}>QUIT TO TITLE</button>
       </div>

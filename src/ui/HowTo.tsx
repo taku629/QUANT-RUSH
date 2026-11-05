@@ -12,11 +12,11 @@ export function HowTo({ onClose }: { onClose: () => void }) {
           <h3>操作</h3>
           <table className="keys">
             <tbody>
-              <tr><td>A / ← ・ D / →</td><td>レーン移動（左右スワイプ。1回のタッチで続けてスワイプ可）</td></tr>
+              <tr><td>A / ← ・ D / →</td><td>レーン移動（スマホ：左右スワイプ、または画面の左右端をタップ）</td></tr>
               <tr><td>W / ↑</td><td>ジャンプ（上スワイプ）— 低いバリアを飛び越える</td></tr>
-              <tr><td>SPACE</td><td>HEDGE：在庫をゼロにする（コストあり・{3}秒クールダウン）</td></tr>
-              <tr><td>SHIFT / S / ↓</td><td>ALPHA DRIVE 発動（ゲージ満タン時・下スワイプ）</td></tr>
-              <tr><td>C / P・ESC</td><td>カメラ切替（標準 / 迫力 / 一人称）/ ポーズ</td></tr>
+              <tr><td>SPACE / 右下ボタン</td><td>HEDGE：在庫をゼロにする（コストあり・{3}秒クールダウン）</td></tr>
+              <tr><td>SHIFT / S / ↓ / 左下ボタン</td><td>ALPHA DRIVE 発動（ゲージ満タン時・下スワイプでも可）</td></tr>
+              <tr><td>C / P・ESC</td><td>カメラ切替（標準 / 迫力 / 一人称。ポーズ画面からも）/ ポーズ</td></tr>
             </tbody>
           </table>
         </section>

@@ -6,6 +6,9 @@ type Hook = {
   autopilot: (s: any, f: number) => any;
 };
 
+/** the countdown is frame-capped; software WebGL can run < 1 FPS while shaders compile */
+const PLAYING_WAIT = 45_000;
+
 const hook = (page: Page) => page.evaluate(() => !!(window as unknown as { __QUANT_RUSH__?: Hook }).__QUANT_RUSH__);
 
 async function startRun(page: Page, isMobile: boolean) {
@@ -20,7 +23,7 @@ async function startRun(page: Page, isMobile: boolean) {
   expect(await hook(page)).toBe(true);
   if (isMobile) await page.getByTestId('play').tap();
   else await page.keyboard.press('Enter');
-  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: 45_000 }).toBe('playing'); // countdown is frame-capped; software WebGL can be < 1 FPS while shaders compile
+  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: PLAYING_WAIT }).toBe('playing');
   return errors;
 }
 
@@ -111,7 +114,7 @@ test('first play shows the tutorial with a frozen clock; skip resumes the clock'
   await page.goto('/');
   await page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().start());
   await expect(page.getByTestId('tutorial')).toBeVisible({ timeout: 15_000 });
-  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: 15_000 }).toBe('playing');
+  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: PLAYING_WAIT }).toBe('playing');
   const t1 = await page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.timeLeft);
   await page.waitForTimeout(800);
   expect(await page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.timeLeft)).toBe(t1);
@@ -141,7 +144,7 @@ test('crossing a settlement gate shows the district title card (visual only)', a
   await page.addInitScript(() => localStorage.setItem('quantrush.settings.v1', JSON.stringify({ tutorialDone: true })));
   await page.goto('/');
   await page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().start(424242));
-  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: 30_000 }).toBe('playing');
+  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: PLAYING_WAIT }).toBe('playing');
   // fast-forward (test-only) to just before the first gate, then let the real game loop cross it
   await page.evaluate(() => {
     const { runtime, autopilot } = (window as any).__QUANT_RUSH__;
@@ -157,4 +160,66 @@ test('crossing a settlement gate shows the district title card (visual only)', a
   await expect(page.getByTestId('district-card')).toContainText('大手町');
   // the card never captures input
   expect(await page.getByTestId('district-card').evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none');
+});
+
+test('v3 HUD: four readable elements, no overlaps, thumb buttons, live score = final score', async ({ page, isMobile }) => {
+  await page.addInitScript(() => localStorage.setItem('quantrush.settings.v1', JSON.stringify({ tutorialDone: true, tips: false })));
+  await page.goto('/');
+  await expect(page.getByTestId('title-steps')).toBeVisible();
+  await expect(page.getByTestId('title-steps')).toContainText('光るレーン');
+  await page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().start(424242));
+  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: PLAYING_WAIT }).toBe('playing');
+  // knocked down with a loaded gauge: the OFFLINE status and the RISK gauge must both be readable
+  await page.evaluate(() => {
+    const { runtime, autopilot, fx } = (window as any).__QUANT_RUSH__;
+    const s = runtime.session;
+    s.timeLeft = 999;
+    s.stability = 99;
+    for (let i = 0; i < 60 * 60 && s.risk < 0.4; i++) {
+      const inp = autopilot(s, i);
+      inp.hedge = false;
+      s.update(inp);
+      s.drainEvents();
+    }
+    s.stumble = 5;
+    fx.hitstop = 1e9;
+  });
+  const status = page.getByTestId('hud-status');
+  await expect(status).toContainText('QUOTES OFFLINE');
+  const box = async (id: string) => (await page.getByTestId(id).boundingBox())!;
+  const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  const st = await box('hud-status');
+  const risk = await box('risk');
+  const hedge = await box('hedge');
+  const alpha = await box('alpha');
+  const pnl = await box('pnl');
+  const dist = await box('district-bar');
+  const regime = await box('regime');
+  expect(overlap(st, risk)).toBe(false);
+  for (const [a, b] of [[risk, hedge], [risk, alpha], [pnl, dist], [regime, dist], [pnl, regime]] as const) expect(overlap(a, b)).toBe(false);
+  // thumb buttons sit in the bottom corners, big enough for a thumb
+  const vw = page.viewportSize()!.width;
+  expect(alpha.x).toBeLessThan(vw * 0.3);
+  expect(hedge.x + hedge.width).toBeGreaterThan(vw * 0.7);
+  if (isMobile) expect(Math.min(hedge.width, hedge.height, alpha.width)).toBeGreaterThanOrEqual(72);
+  // the inventory / tape detail panel is off by default (PRO HUD only)
+  await expect(page.getByTestId('tape')).toHaveCount(0);
+  // live HUD score is the final score function
+  const same = await page.evaluate(() => {
+    const { runtime, useGame } = (window as any).__QUANT_RUSH__;
+    useGame.getState().updateHud();
+    return useGame.getState().hud.score === runtime.session.score().total;
+  });
+  expect(same).toBe(true);
+  // HEDGE thumb button works
+  await page.evaluate(() => { const { runtime, fx } = (window as any).__QUANT_RUSH__; runtime.session.stumble = 0; fx.hitstop = 0; });
+  const before = await page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.engine.hedges.length);
+  await expect
+    .poll(async () => {
+      if (isMobile) await page.getByTestId('hedge').tap();
+      else await page.getByTestId('hedge').click();
+      return page.evaluate(() => (window as any).__QUANT_RUSH__.runtime.session.engine.hedges.length);
+    }, { timeout: 20_000 })
+    .toBeGreaterThan(before);
 });

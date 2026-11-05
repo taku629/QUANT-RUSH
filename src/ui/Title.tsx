@@ -41,6 +41,12 @@ export function Title() {
         <p className="title-pitch">
           兜町から渋谷へ。ネオンの金融街を疾走し、<b>スプレッド</b>で稼ぎ、<b>在庫リスク</b>を制し、<b>暴落</b>を生き延びろ。
         </p>
+        {/* the whole game in three steps (first-time players: readable in ~5 s) */}
+        <ol className="title-steps" data-testid="title-steps">
+          <li><i className="s-glow">▲</i>光るレーンを走る</li>
+          <li><i className="s-earn">$</i>約定とコインで稼ぐ</li>
+          <li><i className="s-risk">!</i>RISK が溜まったら HEDGE</li>
+        </ol>
         <div className="route-mini">
           {DISTRICTS.map((d, i) => (
             <span key={d.id} style={{ color: d.primary }}>
@@ -135,6 +141,7 @@ export function Title() {
               <div className="seg">
                 <button className={settings.tips ? 'on' : ''} onClick={() => setSettings({ tips: !settings.tips })}>TIPS {settings.tips ? 'ON' : 'OFF'}</button>
                 <button className={settings.showFps ? 'on' : ''} onClick={() => setSettings({ showFps: !settings.showFps })}>FPS {settings.showFps ? 'ON' : 'OFF'}</button>
+                <button className={settings.proHud ? 'on' : ''} onClick={() => setSettings({ proHud: !settings.proHud })} title="テープ詳細（FLOW / MOM / VOL）と速度を表示">PRO HUD {settings.proHud ? 'ON' : 'OFF'}</button>
                 <button onClick={() => setSettings({ tutorialDone: false })}>{settings.tutorialDone ? 'チュートリアル再表示' : 'チュートリアル: 次回表示'}</button>
               </div>
             </div>
