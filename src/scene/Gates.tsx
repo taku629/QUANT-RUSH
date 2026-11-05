@@ -34,7 +34,7 @@ export function Gates() {
       banner.current.map = gateTexture(d.name, d.jp, g.final ? `GOAL · RISK CHECK < ${Math.round(GAME_RULES.gateRiskMax * 100)}%` : `RISK CHECK  RISK < ${Math.round(GAME_RULES.gateRiskMax * 100)}% → +TIME`, d.primary);
       banner.current.needsUpdate = true;
     }
-    const pass = s.risk < GAME_RULES.gateRiskMax;
+    const pass = s.currentExposure() < GAME_RULES.gateRiskMax;
     if (curtain.current) {
       curtain.current.color.copy(pass ? ok : bad);
       curtain.current.opacity = 0.12 + Math.sin(env.time * 6) * 0.05;

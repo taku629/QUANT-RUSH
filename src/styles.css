@@ -416,6 +416,8 @@ button { font-family: var(--display); cursor: pointer; color: inherit; touch-act
 .rg-bar { position: relative; height: 12px; margin-top: 4px; background: rgba(255,255,255,0.08); border-radius: 6px; overflow: hidden; }
 .rg-fill { height: 100%; border-radius: 6px; transition: width .12s linear, background .2s; }
 .rg-call.over { color: #ff2a4d; animation-duration: .2s; }
+.rg-ghost { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; opacity: 0.35; transition: width .08s linear; }
+.rg-fill { position: relative; }
 .rg-gate { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #fff; opacity: 0.7; }
 .rg-sweet { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, rgba(255,210,61,0.25) 0 4px, transparent 4px 8px); pointer-events: none; }
 .risk-gauge.warn { border-color: #ffb03d; box-shadow: 0 0 18px rgba(255,176,61,0.35); }

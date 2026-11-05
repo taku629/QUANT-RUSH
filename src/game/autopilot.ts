@@ -1,6 +1,7 @@
 /** Simple autopilot used for the title-screen attract mode, balance checks, full-game bots and smoke tests. */
 import type { LaneId } from '../sim/config';
 import { LANE_X } from './content';
+import { BALANCE } from './gameBalanceConfig';
 import type { GameSession, Input } from './session';
 
 /** seconds until the player meets the first non-jumpable obstacle in a lane */
@@ -42,6 +43,9 @@ export function autopilot(s: GameSession, frame: number, preferred?: LaneId): In
   else if (target > cur) inp.right = 1;
   // v3: settle in the RISK sweet spot (≥ 75 %) before the gauge bursts
   if (s.risk >= 0.75 && frame % 20 === 0) inp.hedge = true;
+  // read the gate's RISK CHECK like a player: lighten up before it if the true exposure is too high
+  const g = s.nextGate;
+  if (g && g.z - s.z < 200 && s.currentExposure() >= BALANCE.risk.gateMax && frame % 20 === 0) inp.hedge = true;
   if (s.alphaReady) inp.alpha = true;
   return inp;
 }

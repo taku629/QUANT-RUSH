@@ -165,6 +165,8 @@ function RiskGauge({ hud }: { hud: HudT }) {
         )}
       </div>
       <div className="rg-bar">
+        {/* ghost = true exposure right now (gates check this); the solid fill catches up at a capped rate */}
+        <div className="rg-ghost" style={{ width: `${Math.max(pct, Math.round(hud.exposure * 100))}%`, background: col }} />
         <div className="rg-fill" style={{ width: `${pct}%`, background: col }} />
         <i className="rg-gate" style={{ left: `${gate}%` }} title="gate check" />
         <i className="rg-sweet" style={{ left: `${BALANCE.risk.warnAt * 100}%`, width: `${100 - BALANCE.risk.warnAt * 100}%` }} />

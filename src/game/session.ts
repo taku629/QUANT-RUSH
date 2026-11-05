@@ -171,6 +171,8 @@ export class GameSession {
   risk = 0;
   /** instantaneous exposure = |inventory| / fullInventory × regime volatility multiplier (may exceed 1) */
   exposure = 0;
+  /** score multiplier (combo × ALPHA) each fill was made with — its markout correction uses the same one */
+  private fillMul = new Map<number, number>();
   maxRisk = 0;
   settlements = 0;
   settlePoints = 0;
@@ -402,7 +404,9 @@ export class GameSession {
     for (const f of ev.fills) {
       this.addCombo(1);
       const SC = BALANCE.score;
-      const pts = f.spread * SC.perSpreadDollar * this.comboMultiplier * (this.alpha > 0 ? 2 : 1);
+      const mul = this.comboMultiplier * (this.alpha > 0 ? 2 : 1);
+      const pts = f.spread * SC.perSpreadDollar * mul;
+      this.fillMul.set(f.orderId, mul);
       this.tradingPoints += pts;
       this.addGauge(1.5 + f.halfSpread * 20);
       this.emit({ type: 'fill', fill: f, points: Math.round(pts) });
@@ -418,7 +422,11 @@ export class GameSession {
     for (const f of ev.markouts) {
       // v3.1: a fill is scored on what it was really worth 2 s later (spread ± the price move), not on the
       // spread alone — fills against informed flow lose points (SCORE only; money is the engine's business)
-      const adj = ((f.markout ?? f.spread) - f.spread) * BALANCE.score.perSpreadDollar * BALANCE.score.markoutWeight;
+      // same multiplier as the fill itself, so a fill's total = markout × perSpreadDollar × mul:
+      // a fill that lost money in the end (toxic) is always worth negative points
+      const mul = this.fillMul.get(f.orderId) ?? 1;
+      this.fillMul.delete(f.orderId);
+      const adj = ((f.markout ?? f.spread) - f.spread) * BALANCE.score.perSpreadDollar * BALANCE.score.markoutWeight * mul;
       this.tradingPoints += adj;
       if (f.toxic) {
         this.emit({ type: 'toxic', fill: f, points: Math.round(adj) });
@@ -623,7 +631,8 @@ export class GameSession {
     if (!g || this.z < g.z) return;
     g.passed = true;
     const inv = this.engine.inventory;
-    const ok = this.risk < GAME_RULES.gateRiskMax;
+    // the gate checks the TRUE exposure right now, not the lagged gauge (the HUD shows both)
+    const ok = this.currentExposure() < GAME_RULES.gateRiskMax;
     const overtime = this.lap > 0;
     const bonus = ok
       ? overtime ? GAME_RULES.overtimePassBonus : Math.max(GAME_RULES.gateMinBonus, GAME_RULES.gatePassBonus - this.district * GAME_RULES.gateDecay)
@@ -646,6 +655,12 @@ export class GameSession {
     this.districtStartZ = g.z;
     this.layoutGate(this.district);
     this.emit({ type: 'district', district: this.district, lap: this.lap });
+  }
+
+  /** exposure from the inventory right now (the gauge fill lags behind it by design) */
+  currentExposure(): number {
+    const R = BALANCE.risk;
+    return (Math.abs(this.engine.inventory) / R.fullInventory) * (R.regimeMul[this.engine.regime] ?? 1);
   }
 
   /** v3 score: PnL points use the v3 weight (gameBalanceConfig), everything else as before */

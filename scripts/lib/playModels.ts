@@ -161,7 +161,7 @@ export class ModelPlayer {
     if (this.st.hedgeAt !== null) {
       // the gate banner ("RISK CHECK < 60 %") is read like any other prompt
       const g = s.nextGate;
-      const gateCheck = !!g && g.z - s.z < 220 && d.risk >= BALANCE.risk.gateMax;
+      const gateCheck = !!g && g.z - s.z < 220 && s.currentExposure() >= BALANCE.risk.gateMax; // the gauge shows exposure as a ghost bar
       const want = d.risk >= this.st.hedgeAt || d.overload || gateCheck || (judg?.hedge ?? false);
       if (want) {
         if (this.promptAt === null) {

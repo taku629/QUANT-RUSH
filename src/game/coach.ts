@@ -55,7 +55,7 @@ export class Coach {
     const g = s.nextGate;
     const cands: Tip[] = [];
     if (s.risk >= 0.7) cands.push({ id: 'inv', tone: 'warn', title: 'RISK が高い！ 今 HEDGE で精算ボーナス', body: '100% で OVERLOAD → カウントダウン内に HEDGE しないと強制決済（割高な手数料・減点・時間減）' });
-    if (g && g.z - s.z < 220 && g.z - s.z > 80 && s.risk >= GAME_RULES.gateRiskMax)
+    if (g && g.z - s.z < 220 && g.z - s.z > 80 && s.currentExposure() >= GAME_RULES.gateRiskMax)
       cands.push({ id: 'gate', tone: 'warn', title: 'ゲートが近い：RISK チェック', body: `RISK ${Math.round(GAME_RULES.gateRiskMax * 100)}% 未満で通過すると時間延長が大きい` });
     if (sig.read === 'ONE_SIDED') cands.push({ id: 'onesided', tone: 'warn', title: '注文が一方向に偏っている', body: '理由のない偏り＋同じ向きの値動きは「情報を持つ相手」のサイン。右へ（広いスプレッド）' });
     if (sig.read === 'ANNOUNCED') cands.push({ id: 'sweep', tone: 'info', title: '公表済みの大口フロー', body: '理由が公表された強制売買は一時的に価格を押すだけ。急いでヘッジしなくてよい' });

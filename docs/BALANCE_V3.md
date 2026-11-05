@@ -146,3 +146,19 @@ spend 81–92 % in the glowing lane and collide 0.2–0.9 times per minute.
 - Whether players understand markout scoring (TOXIC −pts popups).
 - Whether the glowing lane is trusted too much or too little.
 - Fatigue, learning across runs, and mobile thumb reach.
+
+## Review fixes (after v3.1)
+1. **One score function.** The HUD used `PnL × 10 + points` while the result screen used `GameSession.score()`
+   (PnL × 20 × risk multiplier). The HUD now calls `GameSession.score()` itself, so the two always match.
+2. **Gates check the true exposure.** The gauge fill lags on purpose: it is the warning before a forced
+   liquidation. A gate that read the lagged fill could be passed with a fresh block position. Now:
+   - Gates check the current exposure.
+   - The HUD draws it as a translucent "ghost" bar ahead of the fill, so what the gate checks is always visible.
+   - The coach tip and the gate colour use the same value.
+   - On holdout seeds, the casual follower model now reads the ghost bar and hedges before gates
+     (+$202 PnL, 0.11 bursts per run; was +$2 / 0.20).
+3. **Toxic fills are negative in total.** The 2-second markout correction now uses the same combo × ALPHA
+   multiplier as the fill, so a fill's total is `markout × 10 × multiplier`. Before, a toxic fill made with
+   combo ×3 could still score positive.
+
+Regression tests for all three are in `src/game/balance-v3.test.ts`; each fails on the previous code.

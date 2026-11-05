@@ -56,6 +56,8 @@ export type Hud = {
   ghostAhead: number | null;
   /** v3 */
   risk: number;
+  /** true exposure right now (the gauge fill lags behind it); gates check this */
+  exposure: number;
   /** seconds left before a forced liquidation while the gauge is at 100 % (null = not overloaded) */
   overloadLeft: number | null;
   recLane: LaneId;
@@ -325,7 +327,7 @@ export const useGame = create<Store>((set, get) => ({
       laneFlash: prevLane !== undefined && prevLane !== s.quoteLane ? Date.now() : get().laneFlash,
       hud: {
         pnl: e.pnl,
-        score: Math.max(0, Math.round(e.pnl * 10 + s.tradingPoints + s.actionPoints + s.distancePoints)),
+        score: s.score().total, // the same function the results screen uses
         time: Math.max(0, s.timeLeft),
         regime: e.regime,
         inventory: e.inventory,
@@ -358,6 +360,7 @@ export const useGame = create<Store>((set, get) => ({
         fork: s.besideWall(),
         ghostAhead: gp ? gp.z - s.z : null,
         risk: s.risk,
+        exposure: Math.min(1, s.currentExposure()),
         overloadLeft: s.risk >= 1 ? Math.max(0, BALANCE.risk.burstGrace - s.overload) : null,
         recLane: s.advisor.lane,
         danger: s.advisor.danger,

@@ -27,6 +27,7 @@ export function HowTo({ onClose }: { onClose: () => void }) {
             <li>赤白の<b>警告バリケード</b>と赤い斜線は「この相場ではそのレーンが危険」の合図。光るレーンにある低いバリアはジャンプで越えられます。</li>
             <li>約定の得点は<b>2秒後の結果</b>で確定：その後価格が不利に動いた約定（TOXIC）は得点が減ります。スコアの中心は取引の質と最終PnLです。</li>
             <li><b>RISK ゲージ</b>（0〜100%）は在庫×相場の荒さ。{Math.round(BALANCE.risk.warnAt * 100)}% を超えて「HEDGE!」が出たら SPACE で決済。{Math.round(BALANCE.risk.settleMin * 100)}% 以上での決済は精算ボーナス（ギリギリほど大きい）、早めの決済はボーナスなしでも安全。</li>
+            <li>ゲートの RISK チェックは<b>今の在庫</b>で判定。ゲージの薄い部分（これから溜まる分）がゲートの線を越えていたら HEDGE してから通過しよう。</li>
             <li>100% になると <b>OVERLOAD</b>：{BALANCE.risk.burstGrace}秒のカウントダウン内に HEDGE しないと<b>強制決済</b>（割高な手数料・−{BALANCE.risk.burstScore.toLocaleString()}点・−{BALANCE.risk.burstTime}秒）。HEDGE のクールダウン中はカウントダウンが止まります。</li>
           </ul>
         </section>
