@@ -2,13 +2,14 @@ import { create } from 'zustand';
 import type { LaneId, RegimeId } from '../sim/config';
 import { LANES } from '../sim/config';
 import { randomSeed } from '../sim/rng';
-import { computeScore, riskGrade, riskStats, type Grade, type RiskStats, type ScoreBreakdown } from '../sim/scoring';
+import { riskGrade, riskStats, type Grade, type RiskStats, type ScoreBreakdown } from '../sim/scoring';
 import { buildReview, type Review } from '../sim/analysis';
 import type { TimelinePoint } from '../sim/engine';
 import { audio } from './audio';
 import { fx } from './fx';
 import { input } from './input';
 import { GameSession, GAME_RULES, type EndReason, type FxEvent } from './session';
+import { BALANCE } from './gameBalanceConfig';
 import { DISTRICTS, LANE_COLORS, REGIME_STYLE } from './content';
 import { loadRecords, loadSettings, saveRecords, saveSettings, type Records, type Settings } from './storage';
 import { Coach, Tutorial, TUTORIAL, type Tip } from './coach';
@@ -55,6 +56,8 @@ export type Hud = {
   ghostAhead: number | null;
   /** v3 */
   risk: number;
+  /** seconds left before a forced liquidation while the gauge is at 100 % (null = not overloaded) */
+  overloadLeft: number | null;
   recLane: LaneId;
   danger: number;
 };
@@ -229,7 +232,7 @@ export const useGame = create<Store>((set, get) => ({
     if (!s) return;
     const e = s.engine;
     const risk = riskStats(e);
-    const score = computeScore(risk, s.tradingPoints, s.actionPoints + s.distancePoints);
+    const score = s.score();
     const rec = { ...get().records };
     const newBest = score.total > rec.bestScore;
     rec.bestScore = Math.max(rec.bestScore, score.total);
@@ -355,6 +358,7 @@ export const useGame = create<Store>((set, get) => ({
         fork: s.besideWall(),
         ghostAhead: gp ? gp.z - s.z : null,
         risk: s.risk,
+        overloadLeft: s.risk >= 1 ? Math.max(0, BALANCE.risk.burstGrace - s.overload) : null,
         recLane: s.advisor.lane,
         danger: s.advisor.danger,
       },
@@ -399,7 +403,7 @@ export function dispatchEvents(events: FxEvent[]) {
         audio.toxic();
         fx.flash = 0.35;
         fx.flashColor = '#ff2a4d';
-        st.popup({ text: `TOXIC FLOW ${money(ev.fill.markout ?? 0)}`, sub: '逆選択: 約定後に価格が不利に動いた', color: '#ff2a4d', size: 'md', x: 50, y: 30 });
+        st.popup({ text: `TOXIC FLOW ${money(ev.fill.markout ?? 0)}`, sub: `逆選択: 約定後に価格が不利に動いた · ${ev.points.toLocaleString()} pts`, color: '#ff2a4d', size: 'md', x: 50, y: 30 });
         break;
       case 'hedge':
         audio.hedge();
@@ -464,14 +468,15 @@ export function dispatchEvents(events: FxEvent[]) {
       case 'settle':
         audio.settle(ev.sweet);
         fx.burst({ color: ev.sweet ? '#ffd23d' : '#00f0ff', count: ev.sweet ? 90 : 40, speed: 12, life: 0.9 });
-        st.popup({ text: (ev.sweet ? 'PERFECT ' : '') + 'SETTLED ' + Math.round(ev.risk * 100) + '%', sub: '+' + ev.points.toLocaleString() + ' pts · hedge cost −$' + ev.cost.toFixed(2), color: ev.sweet ? '#ffd23d' : '#00f0ff', size: 'lg', y: 40 });
+        if (ev.points > 0) st.popup({ text: (ev.sweet ? 'PERFECT ' : '') + 'SETTLED ' + Math.round(ev.risk * 100) + '%', sub: '+' + ev.points.toLocaleString() + ' pts · hedge cost −$' + ev.cost.toFixed(2), color: ev.sweet ? '#ffd23d' : '#00f0ff', size: 'lg', y: 40 });
+        else st.popup({ text: 'HEDGED ' + Math.round(ev.risk * 100) + '%', sub: 'hedge cost −$' + ev.cost.toFixed(2) + ' · ボーナスは ' + Math.round(BALANCE.risk.settleMin * 100) + '% 以上で', color: '#00f0ff', size: 'md', y: 40 });
         break;
       case 'riskBurst':
         audio.hit();
         fx.shake = Math.max(fx.shake, 0.7);
         fx.flash = 0.6;
         fx.flashColor = '#ff2a4d';
-        st.popup({ text: 'RISK BURST!', sub: '強制決済 ' + Math.abs(ev.qty) + '株 · −$' + ev.cost.toFixed(2), color: '#ff2a4d', size: 'xl', y: 34 });
+        st.popup({ text: 'RISK BURST!', sub: '強制決済 ' + Math.abs(ev.qty) + '株 · −$' + ev.cost.toFixed(2) + ' · −' + ev.points.toLocaleString() + ' pts · −' + ev.seconds + 's', color: '#ff2a4d', size: 'xl', y: 34 });
         break;
       case 'clear':
         fx.burst({ x: ev.x * 0.5, y: 1.5, z: -(ev.z - (s?.z ?? 0)), color: '#ffffff', count: 14, speed: 6, life: 0.5 });

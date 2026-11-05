@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  QUANT RUSH — GAME BALANCE CONFIG  (v3)
+ *  QUANT RUSH — GAME BALANCE CONFIG  (v3 rules, revision v3.1 — see docs/balance-v3.md)
  *  Every number you might want to tune by hand lives here.
  *  Change a value → `npm run balance` (difficulty/run length) and `npm test`.
  *  Note: changing anything here changes gameplay, so the v3 golden test will
@@ -10,6 +10,9 @@
  *  Market-model parameters (prices, order flow, spreads) stay in src/sim/config.ts.
  * ============================================================================
  */
+
+/** rules revision of this file (v1/v2 rules are frozen on archive/v1 and archive/v2) */
+export const RULES_VERSION = 'v3.1';
 
 export const BALANCE = {
   // ---------------------------------------------------------------- clock
@@ -46,13 +49,24 @@ export const BALANCE = {
     fullInventory: 900,
     /** volatility multipliers: the same inventory is riskier in fast markets */
     regimeMul: { CALM: 0.9, TRENDING: 1.0, VOLATILE: 1.15, CRASH: 1.35 } as Record<string, number>,
-    /** seconds of "OVERLOAD" warning at 100 % before the forced liquidation (HEDGE still settles normally) */
-    burstGrace: 0.6,
+    /** the gauge climbs toward the exposure at most this fast (gauge / s) and falls this fast */
+    riseRate: 0.35,
+    fallRate: 1.5,
+    /** seconds of "OVERLOAD" at 100 % before the forced liquidation; only counts while HEDGE is usable */
+    burstGrace: 1.5,
+    /** a forced liquidation also costs score points and clock seconds (it is a failure, not a routine event) */
+    burstScore: 1500,
+    burstTime: 3,
     /** gauge level at which the HUD says "HEDGE!" (the chicken-race sweet spot starts here) */
     warnAt: 0.7,
-    /** settlement bonus (score points, NOT money) when you HEDGE: pointsPerPercent × gauge % */
-    settlePointsPerPct: 12,
-    /** extra multiplier on the settlement bonus when hedging inside the sweet spot (≥ warnAt, < 100 %) */
+    /** settlement bonus (score points, NOT money) when you HEDGE: pointsPerPercent × gauge % × sweetSpotMul */
+    settlePointsPerPct: 10,
+    /**
+     * no settlement bonus for hedges below this gauge level: hedging small positions is allowed (and safe)
+     * but not rewarded — two-sided flow often nets them out for free, while the hedge always costs money
+     */
+    settleMin: 0.7,
+    /** multiplier on the settlement bonus inside the sweet spot (≥ warnAt, < 100 %) */
     sweetSpotMul: 1.5,
     /**
      * At 100 % the position is force-liquidated ("RISK BURST"): flattened at the market with this
@@ -66,19 +80,26 @@ export const BALANCE = {
   // ---------------------------------------------------------------- recommended lane
   recommend: {
     /** a new recommendation must persist this long (s) before the glowing lane moves */
-    confirm: 1.0,
+    confirm: 0.5,
     /** and the glowing lane never moves more often than this (s) */
-    minHold: 3.0,
+    minHold: 1.5,
+    /** the glowing lane stays put for the first seconds of a run (the intro teaches it with coins) */
+    introHold: 8,
   },
 
   // ---------------------------------------------------------------- profit & score
   score: {
     /** trading points per $ of spread captured (× combo multiplier, ×2 during ALPHA) */
     perSpreadDollar: 10,
-    /** extra trading-point multiplier for fills made in the recommended lane */
-    recLaneMul: 1.5,
+    /** final-score points per $ of PnL (× the risk multiplier when profitable) — v1/v2 used 10 */
+    pnlPerDollar: 20,
+    /**
+     * when a fill's 2-second markout is known, its points are corrected by (markout − spread) × perSpreadDollar × this:
+     * fills against informed flow lose points, so the score follows real trading quality
+     */
+    markoutWeight: 1,
     /** profit coin (in the recommended lane): points and ALPHA gauge */
-    coinPoints: 60,
+    coinPoints: 15,
     coinGauge: 2.5,
     nearMissPoints: 150,
     gatePoints: 1000,
@@ -94,7 +115,10 @@ export const BALANCE = {
     /** coins per row placed in the recommended lane */
     coinsPerRow: 3,
     /** chance that a row contains a jumpable gimmick (low barrier / ramp) in the recommended lane */
-    gimmickChance: 0.35,
+    gimmickChance: 0.3,
+    /** + this per district reached (capped at gimmickMax): the glowing lane asks more timing skill later on */
+    gimmickPerDistrict: 0.06,
+    gimmickMax: 0.55,
     /** chance of slow traffic in a NON-recommended lane in calm markets */
     calmTraffic: 0.35,
   },

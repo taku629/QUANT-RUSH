@@ -12,7 +12,7 @@ export const TUTORIAL: Step[] = [
   { id: 'glow', title: '光っている道を走ろう', body: '金色に光るレーン = 今いちばん儲かるスプレッド。← → / スワイプで移動', done: (s, t) => (s.quoteLane === s.advisor.lane && t > 2.5) || t > 7 },
   { id: 'coins', title: 'コインを集めて、注文を受けよう', body: '光るレーンにはコインが並ぶ。危険なレーンには警告バリアが出る', done: (s, t) => s.coins >= 3 || t > 7 },
   { id: 'jump', title: '↑ / 上スワイプでジャンプ', body: '光るレーンの低いバリアはジャンプで越えられる。ランプで大ジャンプ', done: (s, t) => s.jumps + s.ramps >= 1 || t > 9 },
-  { id: 'risk', title: 'RISKゲージが溜まったら HEDGE', body: '稼ぐほど在庫リスクが溜まる。100%前に SPACE / HEDGE で精算ボーナス！ 100%で強制決済', done: (s, t) => s.engine.hedges.length >= 1 || t > 8 },
+  { id: 'risk', title: 'RISKゲージが溜まったら HEDGE', body: '稼ぐほど在庫リスクが溜まる。70%以上で SPACE / HEDGE すると精算ボーナス！ 100%のまま放置すると強制決済', done: (s, t) => s.engine.hedges.length >= 1 || t > 8 },
   { id: 'gate', title: `ゲートは RISK ${Math.round(GAME_RULES.gateRiskMax * 100)}% 未満で通過！`, body: '通過で時間延長。ニアミスでALPHAゲージ → SHIFT / ↓ / 下スワイプ。さあ、本番！', done: (_, t) => t > 5 },
 ];
 
@@ -54,7 +54,7 @@ export class Coach {
     const sig = e.signals();
     const g = s.nextGate;
     const cands: Tip[] = [];
-    if (s.risk >= 0.7) cands.push({ id: 'inv', tone: 'warn', title: 'RISK が高い！ 今 HEDGE で精算ボーナス', body: '100% になると強制決済（手数料が割高）。ギリギリで精算するほどボーナスが大きい' });
+    if (s.risk >= 0.7) cands.push({ id: 'inv', tone: 'warn', title: 'RISK が高い！ 今 HEDGE で精算ボーナス', body: '100% で OVERLOAD → カウントダウン内に HEDGE しないと強制決済（割高な手数料・減点・時間減）' });
     if (g && g.z - s.z < 220 && g.z - s.z > 80 && s.risk >= GAME_RULES.gateRiskMax)
       cands.push({ id: 'gate', tone: 'warn', title: 'ゲートが近い：RISK チェック', body: `RISK ${Math.round(GAME_RULES.gateRiskMax * 100)}% 未満で通過すると時間延長が大きい` });
     if (sig.read === 'ONE_SIDED') cands.push({ id: 'onesided', tone: 'warn', title: '注文が一方向に偏っている', body: '理由のない偏り＋同じ向きの値動きは「情報を持つ相手」のサイン。右へ（広いスプレッド）' });

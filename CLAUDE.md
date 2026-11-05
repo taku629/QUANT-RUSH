@@ -8,6 +8,7 @@
 - `npm run build` — `tsc -b` + vite build (TypeScript errors fail the build)
 - `npm run e2e` — Playwright smoke tests (desktop + mobile; uses SwiftShader WebGL flags)
 - `npm run lab` / `npm run balance` — strategy comparison / difficulty check (vite-node)
+- `npm run playstyles -- [seeds] [firstSeed] [--bursts]` — v3 player-model comparison (computer models, NOT a human playtest; see docs/BALANCE_V3.md)
 
 ## Architecture (keep these boundaries)
 - `src/sim/` — pure financial simulator. NO imports from React/Three/DOM. Deterministic from a seed.

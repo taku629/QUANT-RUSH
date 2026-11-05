@@ -21,6 +21,7 @@ import { Spawner, type ObstacleKind, type PickupKind, type Placement } from './s
 import { makeTrack, type TrackShape } from './track';
 import { BALANCE } from './gameBalanceConfig';
 import { LaneAdvisor } from './recommend';
+import { computeScore, riskStats, type ScoreBreakdown } from '../sim/scoring';
 export type { ObstacleKind } from './spawner';
 
 export type Pickup = { id: number; kind: PickupKind; lane: LaneId; x: number; z: number; used: boolean };
@@ -52,7 +53,7 @@ export type Gate = { index: number; z: number; district: number; final: boolean;
 
 export type FxEvent =
   | { type: 'fill'; fill: Fill; points: number }
-  | { type: 'toxic'; fill: Fill }
+  | { type: 'toxic'; fill: Fill; points: number }
   | { type: 'miss'; reason: string; orderId: number }
   | { type: 'hedge'; qty: number; cost: number }
   | { type: 'hedgeRejected'; reason: string }
@@ -67,7 +68,7 @@ export type FxEvent =
   | { type: 'recLane'; lane: LaneId; danger: number }
   | { type: 'coin'; x: number; z: number; points: number }
   | { type: 'settle'; risk: number; points: number; sweet: boolean; qty: number; cost: number }
-  | { type: 'riskBurst'; qty: number; cost: number }
+  | { type: 'riskBurst'; qty: number; cost: number; points: number; seconds: number }
   | { type: 'clear'; x: number; z: number }
   | { type: 'land' }
   | { type: 'lane'; lane: LaneId }
@@ -166,8 +167,10 @@ export class GameSession {
 
   // v3: recommended lane + RISK gauge
   readonly advisor = new LaneAdvisor();
-  /** RISK gauge 0..1 = |inventory| / fullInventory × regime volatility multiplier */
+  /** RISK gauge 0..1: climbs toward `exposure` at a capped rate (see marketTick) */
   risk = 0;
+  /** instantaneous exposure = |inventory| / fullInventory × regime volatility multiplier (may exceed 1) */
+  exposure = 0;
   maxRisk = 0;
   settlements = 0;
   settlePoints = 0;
@@ -399,7 +402,7 @@ export class GameSession {
     for (const f of ev.fills) {
       this.addCombo(1);
       const SC = BALANCE.score;
-      const pts = f.spread * SC.perSpreadDollar * this.comboMultiplier * (this.alpha > 0 ? 2 : 1) * (f.lane === this.advisor.lane ? SC.recLaneMul : 1);
+      const pts = f.spread * SC.perSpreadDollar * this.comboMultiplier * (this.alpha > 0 ? 2 : 1);
       this.tradingPoints += pts;
       this.addGauge(1.5 + f.halfSpread * 20);
       this.emit({ type: 'fill', fill: f, points: Math.round(pts) });
@@ -413,21 +416,29 @@ export class GameSession {
       if (o.block !== undefined) this.emit({ type: 'block', side: o.side, qty: Math.abs(f.qty), filled: true });
     }
     for (const f of ev.markouts) {
+      // v3.1: a fill is scored on what it was really worth 2 s later (spread ± the price move), not on the
+      // spread alone — fills against informed flow lose points (SCORE only; money is the engine's business)
+      const adj = ((f.markout ?? f.spread) - f.spread) * BALANCE.score.perSpreadDollar * BALANCE.score.markoutWeight;
+      this.tradingPoints += adj;
       if (f.toxic) {
-        this.emit({ type: 'toxic', fill: f });
+        this.emit({ type: 'toxic', fill: f, points: Math.round(adj) });
         this.breakCombo('TOXIC FLOW');
       }
     }
     if (ev.hedge?.forced) {
       // RISK BURST: forced liquidation at a penalty (booked as hedge cost), no bonus, combo lost
+      // a clear failure: money (penalty fill), score, clock and combo
+      const R = BALANCE.risk;
       this.riskBursts++;
       this.breakCombo('RISK BURST');
-      this.emit({ type: 'riskBurst', qty: ev.hedge.qty, cost: ev.hedge.cost });
+      this.actionPoints -= R.burstScore;
+      if (!this.timerFrozen) this.timeLeft -= R.burstTime;
+      this.emit({ type: 'riskBurst', qty: ev.hedge.qty, cost: ev.hedge.cost, points: R.burstScore, seconds: R.burstTime });
     } else if (ev.hedge) {
       // settlement bonus (SCORE only — money is untouched): bigger the closer you dared to 100 %
       const R = BALANCE.risk;
       const sweet = riskBefore >= R.warnAt;
-      const pts = Math.round(riskBefore * 100 * R.settlePointsPerPct * (sweet ? R.sweetSpotMul : 1));
+      const pts = riskBefore >= R.settleMin ? Math.round(riskBefore * 100 * R.settlePointsPerPct * (sweet ? R.sweetSpotMul : 1)) : 0;
       this.settlements++;
       this.settlePoints += pts;
       this.actionPoints += pts;
@@ -435,13 +446,19 @@ export class GameSession {
       this.emit({ type: 'hedge', qty: ev.hedge.qty, cost: ev.hedge.cost });
       this.emit({ type: 'settle', risk: riskBefore, points: pts, sweet, qty: ev.hedge.qty, cost: ev.hedge.cost });
     } else if (hedge && ev.hedgeRejected) this.emit({ type: 'hedgeRejected', reason: ev.hedgeRejected });
-    // RISK gauge after this tick; at 100 % the next tick force-liquidates
+    // RISK gauge after this tick. It climbs toward the exposure at a capped rate (one big fill is visible
+    // before it bites), drops quickly, and is empty right after a settlement.
     const R = BALANCE.risk;
-    this.risk = Math.min(1, (Math.abs(this.engine.inventory) / R.fullInventory) * (R.regimeMul[this.engine.regime] ?? 1));
+    const mdt = this.engine.cfg.dt;
+    this.exposure = (Math.abs(this.engine.inventory) / R.fullInventory) * (R.regimeMul[this.engine.regime] ?? 1);
+    if (ev.hedge) this.risk = 0;
+    else if (this.exposure > this.risk) this.risk = Math.min(this.exposure, this.risk + R.riseRate * mdt);
+    else this.risk = Math.max(this.exposure, this.risk - R.fallRate * mdt);
+    this.risk = Math.min(1, this.risk);
     this.maxRisk = Math.max(this.maxRisk, this.risk);
     if (this.risk >= 1) {
-      // OVERLOAD: a short, visible grace period — HEDGE now still settles normally
-      this.overload += this.engine.cfg.dt;
+      // OVERLOAD: a visible countdown that only runs while HEDGE is usable — a burst is always avoidable
+      if (this.engine.tick >= this.engine.hedgeReadyTick) this.overload += mdt;
       if (this.overload >= R.burstGrace && !hedge) this.burstQueued = true;
     } else this.overload = 0;
     if (ev.limitHit) this.emit({ type: 'limit' });
@@ -629,6 +646,11 @@ export class GameSession {
     this.districtStartZ = g.z;
     this.layoutGate(this.district);
     this.emit({ type: 'district', district: this.district, lap: this.lap });
+  }
+
+  /** v3 score: PnL points use the v3 weight (gameBalanceConfig), everything else as before */
+  score(): ScoreBreakdown {
+    return computeScore(riskStats(this.engine), this.tradingPoints, this.actionPoints + this.distancePoints, BALANCE.score.pnlPerDollar);
   }
 
   finish(reason: EndReason) {

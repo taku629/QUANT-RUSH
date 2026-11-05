@@ -5,7 +5,6 @@
  * Test/QA helper only — not used by the game itself.
  */
 import { createRng } from '../sim/rng';
-import { computeScore, riskStats } from '../sim/scoring';
 import { autopilot } from './autopilot';
 import { GameSession, type Input } from './session';
 import type { VehicleId } from './content';
@@ -43,8 +42,7 @@ export function runScripted(seed: number, vehicle: VehicleId, seconds: number): 
 export function fingerprint(s: GameSession): Fingerprint {
   const e = s.engine;
   const tape = e.tape;
-  const risk = riskStats(e);
-  const score = computeScore(risk, s.tradingPoints, s.actionPoints + s.distancePoints);
+  const score = s.score();
   return {
     ticks: e.tick,
     frames: s.frame,

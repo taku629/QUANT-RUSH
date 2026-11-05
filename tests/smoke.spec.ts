@@ -20,7 +20,7 @@ async function startRun(page: Page, isMobile: boolean) {
   expect(await hook(page)).toBe(true);
   if (isMobile) await page.getByTestId('play').tap();
   else await page.keyboard.press('Enter');
-  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: 15_000 }).toBe('playing');
+  await expect.poll(() => page.evaluate(() => (window as any).__QUANT_RUSH__.useGame.getState().phase), { timeout: 45_000 }).toBe('playing'); // countdown is frame-capped; software WebGL can be < 1 FPS while shaders compile
   return errors;
 }
 

@@ -152,7 +152,7 @@ export class Spawner {
 
     // recommended lane: coins + (sometimes) a jumpable gimmick
     coins(C.coinsPerRow, z);
-    if (r.next() < C.gimmickChance) {
+    if (r.next() < Math.min(C.gimmickMax, C.gimmickChance + Math.min(ctx.district, 4) * C.gimmickPerDistrict)) {
       if (r.next() < 0.6) out.obstacles.push({ kind: 'barrier', lane: rec, z: z + out.gap * 0.55, span: 1 });
       else out.pickups.push({ kind: 'ramp', lane: rec, z: z + out.gap * 0.45 });
     }

@@ -11,15 +11,18 @@ import type { MarketMakerEngine } from '../sim/engine';
 import type { FlowRead, MarketSignals } from '../sim/signals';
 import { BALANCE } from './gameBalanceConfig';
 
+/**
+ * v3.1 "robust" policy. A human follows the glow ~0.5–1 s late, so short-lived calls for the tight lane
+ * (the v3.0 policy copied the SIGNAL READER bot) mostly arrived after the opportunity and lost money.
+ * Tight (LEFT) only in a calm market with busy two-sided flow; wide (RIGHT) whenever the market is fast
+ * or the flow is one-sided; CENTER otherwise. Measured with scripts/playstyles.ts (models, not people).
+ */
 export function rawRecommendation(sig: MarketSignals, regime: RegimeId, realizedVol: number): LaneId {
-  if (regime === 'CRASH') return 2;
+  if (regime === 'CRASH' || regime === 'VOLATILE') return 2;
   if (sig.read === 'ONE_SIDED' || sig.read === 'ANNOUNCED') return 2;
-  if (sig.read === 'RUSH') return 0;
-  // spread income estimated from public prints, haircut for adverse selection (tighter = more exposed)
-  const v = [sig.laneIncome[0] * 0.5, sig.laneIncome[1] * 0.75, sig.laneIncome[2]];
-  let lane = (v[0] >= v[1] && v[0] >= v[2] ? 0 : v[1] >= v[2] ? 1 : 2) as LaneId;
-  if (realizedVol > 0.05 && lane === 0) lane = 1;
-  return lane;
+  if (regime === 'TRENDING') return realizedVol > 0.04 ? 2 : 1;
+  if (sig.read === 'RUSH' && realizedVol < 0.03) return 0;
+  return 1;
 }
 
 /** lanes that are actually dangerous right now (fast / one-sided markets punish the tight AGGRESSIVE quote) */
@@ -59,7 +62,7 @@ export class LaneAdvisor {
     }
     let moved: LaneId | null = null;
     const R = BALANCE.recommend;
-    if (this.candidate !== this.lane && t - this.candSince >= R.confirm && t - this.lastChange >= R.minHold) {
+    if (this.candidate !== this.lane && t >= R.introHold && t - this.candSince >= R.confirm && t - this.lastChange >= R.minHold) {
       this.lane = this.candidate;
       this.lastChange = t;
       this.changes++;

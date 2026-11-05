@@ -158,7 +158,11 @@ function RiskGauge({ hud }: { hud: HudT }) {
       <div className="rg-top">
         <span className="rg-label">RISK</span>
         <b style={{ color: col }}>{pct}%</b>
-        {warn && <em className="rg-call">HEDGE!</em>}
+        {hud.overloadLeft !== null ? (
+          <em className="rg-call over">OVERLOAD {hud.overloadLeft.toFixed(1)}s</em>
+        ) : (
+          warn && <em className="rg-call">HEDGE!</em>
+        )}
       </div>
       <div className="rg-bar">
         <div className="rg-fill" style={{ width: `${pct}%`, background: col }} />

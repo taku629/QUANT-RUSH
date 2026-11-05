@@ -23,9 +23,11 @@ export function HowTo({ onClose }: { onClose: () => void }) {
         <section>
           <h3>まずはこれだけ（v3）</h3>
           <ul>
-            <li><b>金色に光るレーン</b>（矢印つき）が、いまの相場でおすすめのレーン。ここを走ればコインが取れ、約定の得点も ×{BALANCE.score.recLaneMul}。</li>
+            <li><b>金色に光るレーン</b>（矢印つき）は、公開情報から見た「平均的に安全で儲かりやすい」レーン。迷ったらここ。ただし<b>いつも正解ではありません</b> — テープを読んで自分で選ぶ余地があります。</li>
             <li>赤白の<b>警告バリケード</b>と赤い斜線は「この相場ではそのレーンが危険」の合図。光るレーンにある低いバリアはジャンプで越えられます。</li>
-            <li><b>RISK ゲージ</b>（0〜100%）は在庫の危なさ。{Math.round(BALANCE.risk.warnAt * 100)}% を超えて「HEDGE!」が出たら SPACE で決済 — ギリギリで決済するほどボーナスが大きい。100% のまま放置すると強制決済（ペナルティ）。</li>
+            <li>約定の得点は<b>2秒後の結果</b>で確定：その後価格が不利に動いた約定（TOXIC）は得点が減ります。スコアの中心は取引の質と最終PnLです。</li>
+            <li><b>RISK ゲージ</b>（0〜100%）は在庫×相場の荒さ。{Math.round(BALANCE.risk.warnAt * 100)}% を超えて「HEDGE!」が出たら SPACE で決済。{Math.round(BALANCE.risk.settleMin * 100)}% 以上での決済は精算ボーナス（ギリギリほど大きい）、早めの決済はボーナスなしでも安全。</li>
+            <li>100% になると <b>OVERLOAD</b>：{BALANCE.risk.burstGrace}秒のカウントダウン内に HEDGE しないと<b>強制決済</b>（割高な手数料・−{BALANCE.risk.burstScore.toLocaleString()}点・−{BALANCE.risk.burstTime}秒）。HEDGE のクールダウン中はカウントダウンが止まります。</li>
           </ul>
         </section>
         <section>

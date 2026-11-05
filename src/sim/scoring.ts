@@ -81,10 +81,11 @@ export type ScoreBreakdown = {
 };
 
 /**
- * total = PnL×10 × risk multiplier (only when profitable) + trading points (combo fills) + action points (near-miss, gates…)
+ * total = PnL×pointsPerDollar × risk multiplier (only when profitable) + trading points (combo fills) + action points (near-miss, gates…)
+ * pointsPerDollar defaults to 10 (v1/v2 rules); the v3 game passes its own weight.
  */
-export function computeScore(r: RiskStats, tradingPoints: number, actionPoints: number): ScoreBreakdown {
-  const pnlPoints = Math.round(r.pnl * 10);
+export function computeScore(r: RiskStats, tradingPoints: number, actionPoints: number, pointsPerDollar = 10): ScoreBreakdown {
+  const pnlPoints = Math.round(r.pnl * pointsPerDollar);
   const mult = riskMultiplier(r);
   const total = Math.max(0, Math.round(pnlPoints * mult + tradingPoints + actionPoints));
   return { pnlPoints, riskMultiplier: mult, tradingPoints: Math.round(tradingPoints), actionPoints: Math.round(actionPoints), total };

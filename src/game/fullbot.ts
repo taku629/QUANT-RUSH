@@ -5,7 +5,6 @@
  */
 import type { Strategy } from '../sim/strategies';
 import { riskStats } from '../sim/scoring';
-import { computeScore } from '../sim/scoring';
 import { autopilot } from './autopilot';
 import { GameSession } from './session';
 import type { VehicleId } from './content';
@@ -23,6 +22,6 @@ export function runFullGameBot(seed: number, strategy: Strategy, vehicle: Vehicl
   }
   if (!s.ended) s.finish('TIME');
   const risk = riskStats(s.engine);
-  const score = computeScore(risk, s.tradingPoints, s.actionPoints + s.distancePoints);
+  const score = s.score();
   return { name: strategy.name, pnl: risk.pnl, rar: risk.rar, score: score.total, distance: s.z, collisions: s.collisions, seconds: s.t, end: s.endReason };
 }

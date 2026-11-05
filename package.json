@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "lab": "vite-node scripts/quantlab.ts",
     "balance": "vite-node scripts/balance.ts",
+    "playstyles": "vite-node scripts/playstyles.ts",
     "e2e": "playwright test"
   },
   "dependencies": {
